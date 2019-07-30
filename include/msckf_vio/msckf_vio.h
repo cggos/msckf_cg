@@ -19,6 +19,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
 #include <tf/transform_broadcaster.h>
 #include <std_srvs/Trigger.h>
 
@@ -208,9 +209,12 @@ class MsckfVio {
     ros::Subscriber imu_sub;
     ros::Subscriber feature_sub;
     ros::Publisher odom_pub;
+    ros::Publisher path_pub;
     ros::Publisher feature_pub;
     tf::TransformBroadcaster tf_pub;
     ros::ServiceServer reset_srv;
+
+    nav_msgs::Path path_msg;
 
     // Frame id
     std::string fixed_frame_id;

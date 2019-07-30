@@ -177,6 +177,7 @@ bool MsckfVio::loadParameters() {
 }
 
 bool MsckfVio::createRosIO() {
+  path_pub = nh.advertise<nav_msgs::Path>("path", 10);
   odom_pub = nh.advertise<nav_msgs::Odometry>("odom", 10);
   feature_pub = nh.advertise<sensor_msgs::PointCloud2>(
       "feature_point_cloud", 10);
@@ -1421,6 +1422,17 @@ void MsckfVio::publish(const ros::Time& time) {
       odom_msg.twist.covariance[i*6+j] = P_body_vel(i, j);
 
   odom_pub.publish(odom_msg);
+
+  // Publish the path
+  geometry_msgs::PoseStamped pose_stamped;
+  pose_stamped.header.stamp = time;
+  pose_stamped.header.frame_id = fixed_frame_id;
+  pose_stamped.pose = odom_msg.pose.pose;
+  
+  path_msg.header.stamp = time;
+  path_msg.header.frame_id = fixed_frame_id;
+  path_msg.poses.push_back(pose_stamped);
+  path_pub.publish(path_msg);
 
   // Publish the 3D positions of the features that
   // has been initialized.
