@@ -1,30 +1,20 @@
 # MSCKF\_VIO
 
+Modified version of [KumarRobotics/msckf_vio](https://github.com/KumarRobotics/msckf_vio) (commit e3a39a9 on Jul 26, 2019), a stereo version of MSCKF.
 
-The `MSCKF_VIO` package is a stereo version of MSCKF. The software takes in synchronized stereo images and IMU messages and generates real-time 6DOF pose estimation of the IMU frame.
+The software takes in synchronized stereo images and IMU messages and generates real-time 6DOF pose estimation of the IMU frame.
 
-The software is tested on Ubuntu 16.04 with ROS Kinetic.
+* tested on Ubuntu 16.04 with ROS Kinetic
+* Paper Draft: *[Robust Stereo Visual Inertial Odometry for Fast Autonomous Flight](https://arxiv.org/abs/1712.00036)*
 
-Video: [https://www.youtube.com/watch?v=jxfJFgzmNSw&t](https://www.youtube.com/watch?v=jxfJFgzmNSw&t=3s)<br/>
-Paper Draft: [https://arxiv.org/abs/1712.00036](https://arxiv.org/abs/1712.00036)
 
-## License
+## Build
 
-Penn Software License. See LICENSE.txt for further details.
-
-## Dependencies
-
-Most of the dependencies are standard including `Eigen`, `OpenCV`, and `Boost`. The standard shipment from Ubuntu 16.04 and ROS Kinetic works fine. One special requirement is `suitesparse`, which can be installed through,
-
-```
-sudo apt-get install libsuitesparse-dev
-```
-
-## Compling
-The software is a standard catkin package. Make sure the package is on `ROS_PACKAGE_PATH` after cloning the package to your workspace. And the normal procedure for compiling a catkin package should work.
-
-```
-cd your_work_space
+```sh
+mkdir -p ws_msckf/src
+cd ws_msckf/src
+git clone xxx
+cd ../
 catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
