@@ -3,7 +3,7 @@
   <arg name="robot" default="mynteye"/>
   <arg name="fixed_frame_id" default="mynteye_link"/>
   <arg name="calibration_file"
-    default="$(find msckf_vio)/config/camchain-imucam-mynteye-s1030.yaml"/>
+    default="$(find msckf_vio)/config/camchain-imucam-mynteye-s2100.yaml"/>
   <arg name="rviz" default="false"/>
 
   <group if="$(arg rviz)">
@@ -26,7 +26,7 @@
       <rosparam command="load" file="$(arg calibration_file)"/>
 
       <param name="publish_tf" value="true"/>
-      <param name="frame_rate" value="10"/>
+      <param name="frame_rate" value="20"/>
       <param name="fixed_frame_id" value="$(arg fixed_frame_id)"/>
       <param name="child_frame_id" value="odom"/>
       <param name="max_cam_state_size" value="20"/>
@@ -40,10 +40,10 @@
       <param name="feature/config/translation_threshold" value="-1.0"/>
 
       <!-- These values should be standard deviation -->
-      <param name="noise/gyro" value="0.00888232829671"/>
-      <param name="noise/acc" value="0.0268014618074"/>
-      <param name="noise/gyro_bias" value="0.000379565782927"/>
-      <param name="noise/acc_bias" value="0.00262960861593"/>
+      <param name="noise/gyro" value="0.0021923690143745844"/>
+      <param name="noise/acc" value="0.02165722852325273"/>
+      <param name="noise/gyro_bias" value="1.4221215955051228e-05"/>
+      <param name="noise/acc_bias" value="0.000381538711491782"/>
       <param name="noise/feature" value="0.035"/>
 
       <param name="initial_state/velocity/x" value="0.0"/>
