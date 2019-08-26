@@ -142,7 +142,8 @@ bool MsckfVio::loadParameters() {
   // Maximum number of camera states to be stored
   nh.param<int>("max_cam_state_size", max_cam_state_size, 30);
 
-  ROS_INFO("===========================================");
+  ROS_INFO("MsckfVio begin ===========================================");
+
   ROS_INFO("fixed frame id: %s", fixed_frame_id.c_str());
   ROS_INFO("child frame id: %s", child_frame_id.c_str());
   ROS_INFO("publish tf: %d", publish_tf);
@@ -172,7 +173,12 @@ bool MsckfVio::loadParameters() {
   cout << T_imu_cam0.translation().transpose() << endl;
 
   ROS_INFO("max camera state #: %d", max_cam_state_size);
-  ROS_INFO("===========================================");
+
+  std::cout << "T_imu_cam0:\n" << T_imu_cam0.matrix() << std::endl;
+  std::cout << "T_cam0_cam1:\n" << CAMState::T_cam0_cam1.matrix() << std::endl;
+  std::cout << "T_imu_body:\n" << IMUState::T_imu_body.matrix() << std::endl;
+
+  ROS_INFO("MsckfVio end ===========================================");
   return true;
 }
 

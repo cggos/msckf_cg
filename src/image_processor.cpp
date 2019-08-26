@@ -122,7 +122,7 @@ bool ImageProcessor::loadParameters() {
   nh.param<double>("stereo_threshold",
       processor_config.stereo_threshold, 3);
 
-  ROS_INFO("===========================================");
+  ROS_INFO("ImageProcessor begin ===========================================");
   ROS_INFO("cam0_resolution: %d, %d",
       cam0_resolution[0], cam0_resolution[1]);
   ROS_INFO("cam0_intrinscs: %f, %f, %f, %f",
@@ -170,7 +170,13 @@ bool ImageProcessor::loadParameters() {
       processor_config.ransac_threshold);
   ROS_INFO("stereo_threshold: %f",
       processor_config.stereo_threshold);
-  ROS_INFO("===========================================");
+
+  std::cout << "T_imu_cam0:\n" << T_imu_cam0 << std::endl;
+  std::cout << "T_cam0_cam1:\n" << T_cam0_cam1 << std::endl;
+  std::cout << "R_cam1_imu:\n" << R_cam1_imu << std::endl;
+  std::cout << "t_cam1_imu:\n" << t_cam1_imu << std::endl;
+
+  ROS_INFO("ImageProcessor end ===========================================");
   return true;
 }
 
