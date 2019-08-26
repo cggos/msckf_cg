@@ -4,6 +4,11 @@
   <arg name="fixed_frame_id" default="world"/>
   <arg name="calibration_file"
     default="$(find msckf_vio)/config/camchain-imucam-euroc.yaml"/>
+  <arg name="rviz" default="false"/>
+
+  <group if="$(arg rviz)">
+      <node pkg="rviz" type="rviz" name="rviz" args="-d $(find msckf_vio)/rviz/rviz_euroc_config.rviz"/>
+  </group>
 
   <!-- Image Processor Nodelet  -->
   <include file="$(find msckf_vio)/launch/image_processor_euroc.launch">
