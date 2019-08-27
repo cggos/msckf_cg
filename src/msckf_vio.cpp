@@ -222,6 +222,8 @@ bool MsckfVio::initialize() {
       return false;
   ROS_INFO("Finish creating ROS IO...");
 
+  pose_outfile_.open("msckf_pose_out.txt");
+
   return true;
 }
 
@@ -1274,6 +1276,14 @@ void MsckfVio::publish(const ros::Time& time) {
 
   Eigen::Isometry3d T_b_w = IMUState::T_imu_body * T_i_w * IMUState::T_imu_body.inverse();
   Eigen::Vector3d body_velocity = IMUState::T_imu_body.linear() * imu_state.velocity;
+
+  // TUM format
+  Eigen::Matrix3d m3_r = T_b_w.rotation();
+  Eigen::Vector3d v3_t = T_b_w.translation();
+  Eigen::Quaterniond q4_r(m3_r);  
+  pose_outfile_ << std::fixed << time.toSec() << " "
+                << v3_t[0] << " " << v3_t[1] << " " << v3_t[2] << " "
+                << q4_r.x() << " " << q4_r.y() << " " << q4_r.z() << " " << q4_r.w() << std::endl;
 
   // Publish tf
   if (publish_tf) {

@@ -12,6 +12,8 @@
 #include <set>
 #include <vector>
 #include <string>
+#include <fstream>
+
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <boost/shared_ptr.hpp>
@@ -47,7 +49,9 @@ class MsckfVio {
     MsckfVio operator=(const MsckfVio&) = delete;
 
     // Destructor
-    ~MsckfVio() {}
+    ~MsckfVio() {
+        pose_outfile_.close();
+    }
 
     /*
      * @brief initialize Initialize the VIO.
@@ -236,6 +240,8 @@ class MsckfVio {
     ros::Publisher mocap_odom_pub;
     geometry_msgs::TransformStamped raw_mocap_odom_msg;
     Eigen::Isometry3d mocap_initial_frame;
+
+    std::ofstream pose_outfile_;
 };
 
 typedef MsckfVio::Ptr MsckfVioPtr;
