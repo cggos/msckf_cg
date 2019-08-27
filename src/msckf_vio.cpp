@@ -31,6 +31,7 @@ using namespace std;
 using namespace Eigen;
 
 namespace msckf_vio{
+
 // Static member variables in IMUState class.
 StateIDType IMUState::next_id = 0;
 double IMUState::gyro_noise = 0.001;
@@ -185,57 +186,50 @@ bool MsckfVio::loadParameters() {
 bool MsckfVio::createRosIO() {
   path_pub = nh.advertise<nav_msgs::Path>("path", 10);
   odom_pub = nh.advertise<nav_msgs::Odometry>("odom", 10);
-  feature_pub = nh.advertise<sensor_msgs::PointCloud2>(
-      "feature_point_cloud", 10);
+  feature_pub = nh.advertise<sensor_msgs::PointCloud2>("feature_point_cloud", 10);
 
-  reset_srv = nh.advertiseService("reset",
-      &MsckfVio::resetCallback, this);
+  reset_srv = nh.advertiseService("reset", &MsckfVio::resetCallback, this);
 
-  imu_sub = nh.subscribe("imu", 100,
-      &MsckfVio::imuCallback, this);
-  feature_sub = nh.subscribe("features", 40,
-      &MsckfVio::featureCallback, this);
+  imu_sub = nh.subscribe("imu", 100, &MsckfVio::imuCallback, this);
+  feature_sub = nh.subscribe("features", 40, &MsckfVio::featureCallback, this);
 
-  mocap_odom_sub = nh.subscribe("mocap_odom", 10,
-      &MsckfVio::mocapOdomCallback, this);
+  mocap_odom_sub = nh.subscribe("mocap_odom", 10, &MsckfVio::mocapOdomCallback, this);
   mocap_odom_pub = nh.advertise<nav_msgs::Odometry>("gt_odom", 1);
 
   return true;
 }
 
 bool MsckfVio::initialize() {
-  if (!loadParameters()) return false;
+  if (!loadParameters())
+      return false;
   ROS_INFO("Finish loading ROS parameters...");
 
   // Initialize state server
-  state_server.continuous_noise_cov =
-    Matrix<double, 12, 12>::Zero();
-  state_server.continuous_noise_cov.block<3, 3>(0, 0) =
-    Matrix3d::Identity()*IMUState::gyro_noise;
-  state_server.continuous_noise_cov.block<3, 3>(3, 3) =
-    Matrix3d::Identity()*IMUState::gyro_bias_noise;
-  state_server.continuous_noise_cov.block<3, 3>(6, 6) =
-    Matrix3d::Identity()*IMUState::acc_noise;
-  state_server.continuous_noise_cov.block<3, 3>(9, 9) =
-    Matrix3d::Identity()*IMUState::acc_bias_noise;
+  state_server.continuous_noise_cov = Matrix<double, 12, 12>::Zero();
+  state_server.continuous_noise_cov.block<3, 3>(0, 0) = Matrix3d::Identity()*IMUState::gyro_noise;
+  state_server.continuous_noise_cov.block<3, 3>(3, 3) = Matrix3d::Identity()*IMUState::gyro_bias_noise;
+  state_server.continuous_noise_cov.block<3, 3>(6, 6) = Matrix3d::Identity()*IMUState::acc_noise;
+  state_server.continuous_noise_cov.block<3, 3>(9, 9) = Matrix3d::Identity()*IMUState::acc_bias_noise;
 
   // Initialize the chi squared test table with confidence
   // level 0.95.
   for (int i = 1; i < 100; ++i) {
     boost::math::chi_squared chi_squared_dist(i);
-    chi_squared_test_table[i] =
-      boost::math::quantile(chi_squared_dist, 0.05);
+    chi_squared_test_table[i] = boost::math::quantile(chi_squared_dist, 0.05);
   }
 
-  if (!createRosIO()) return false;
+  if (!createRosIO())
+      return false;
   ROS_INFO("Finish creating ROS IO...");
 
   return true;
 }
 
-void MsckfVio::imuCallback(
-    const sensor_msgs::ImuConstPtr& msg) {
-
+/**
+ * @brief 接收IMU数据，将IMU数据存到imu_msg_buffer中，这里只会利用开头200帧IMU数据进行静止初始化，不做其他处理
+ * @param msg
+ */
+void MsckfVio::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   // IMU msgs are pushed backed into a buffer instead of
   // being processed immediately. The IMU msgs are processed
   // when the next image is available, in which way, we can
@@ -243,7 +237,8 @@ void MsckfVio::imuCallback(
   imu_msg_buffer.push_back(*msg);
 
   if (!is_gravity_set) {
-    if (imu_msg_buffer.size() < 200) return;
+    if (imu_msg_buffer.size() < 200)
+        return;
     //if (imu_msg_buffer.size() < 10) return;
     initializeGravityAndBias();
     is_gravity_set = true;
@@ -269,30 +264,24 @@ void MsckfVio::initializeGravityAndBias() {
     sum_linear_acc += linear_acc;
   }
 
-  state_server.imu_state.gyro_bias =
-    sum_angular_vel / imu_msg_buffer.size();
+  state_server.imu_state.gyro_bias = sum_angular_vel / imu_msg_buffer.size();
   //IMUState::gravity =
   //  -sum_linear_acc / imu_msg_buffer.size();
   // This is the gravity in the IMU frame.
-  Vector3d gravity_imu =
-    sum_linear_acc / imu_msg_buffer.size();
+  Vector3d gravity_imu = sum_linear_acc / imu_msg_buffer.size();
 
   // Initialize the initial orientation, so that the estimation
   // is consistent with the inertial frame.
   double gravity_norm = gravity_imu.norm();
   IMUState::gravity = Vector3d(0.0, 0.0, -gravity_norm);
 
-  Quaterniond q0_i_w = Quaterniond::FromTwoVectors(
-    gravity_imu, -IMUState::gravity);
-  state_server.imu_state.orientation =
-    rotationToQuaternion(q0_i_w.toRotationMatrix().transpose());
+  Quaterniond q0_i_w = Quaterniond::FromTwoVectors(gravity_imu, -IMUState::gravity);
+  state_server.imu_state.orientation = rotationToQuaternion(q0_i_w.toRotationMatrix().transpose());
 
   return;
 }
 
-bool MsckfVio::resetCallback(
-    std_srvs::Trigger::Request& req,
-    std_srvs::Trigger::Response& res) {
+bool MsckfVio::resetCallback(std_srvs::Trigger::Request& req,std_srvs::Trigger::Response& res) {
 
   ROS_WARN("Start resetting msckf vio...");
   // Temporarily shutdown the subscribers to prevent the
@@ -353,10 +342,8 @@ bool MsckfVio::resetCallback(
   is_first_img = true;
 
   // Restart the subscribers.
-  imu_sub = nh.subscribe("imu", 100,
-      &MsckfVio::imuCallback, this);
-  feature_sub = nh.subscribe("features", 40,
-      &MsckfVio::featureCallback, this);
+  imu_sub = nh.subscribe("imu", 100, &MsckfVio::imuCallback, this);
+  feature_sub = nh.subscribe("features", 40, &MsckfVio::featureCallback, this);
 
   // TODO: When can the reset fail?
   res.success = true;
@@ -364,11 +351,14 @@ bool MsckfVio::resetCallback(
   return true;
 }
 
-void MsckfVio::featureCallback(
-    const CameraMeasurementConstPtr& msg) {
-
+/**
+ * @brief 接收双目特征，进行后端处理。利用IMU进行EKF Propagation，利用双目特征进行EKF Update
+ * @param msg
+ */
+void MsckfVio::featureCallback(const CameraMeasurementConstPtr& msg) {
   // Return if the gravity vector has not been set.
-  if (!is_gravity_set) return;
+  if (!is_gravity_set)
+      return;
 
   // Start the system if the first image is received.
   // The frame where the first image is received will be
@@ -386,38 +376,32 @@ void MsckfVio::featureCallback(
   // that are received before the image msg.
   ros::Time start_time = ros::Time::now();
   batchImuProcessing(msg->header.stamp.toSec());
-  double imu_processing_time = (
-      ros::Time::now()-start_time).toSec();
+  double imu_processing_time = (ros::Time::now()-start_time).toSec();
 
   // Augment the state vector.
   start_time = ros::Time::now();
   stateAugmentation(msg->header.stamp.toSec());
-  double state_augmentation_time = (
-      ros::Time::now()-start_time).toSec();
+  double state_augmentation_time = (ros::Time::now()-start_time).toSec();
 
   // Add new observations for existing features or new
   // features in the map server.
   start_time = ros::Time::now();
   addFeatureObservations(msg);
-  double add_observations_time = (
-      ros::Time::now()-start_time).toSec();
+  double add_observations_time = (ros::Time::now()-start_time).toSec();
 
   // Perform measurement update if necessary.
   start_time = ros::Time::now();
   removeLostFeatures();
-  double remove_lost_features_time = (
-      ros::Time::now()-start_time).toSec();
+  double remove_lost_features_time = (ros::Time::now()-start_time).toSec();
 
   start_time = ros::Time::now();
   pruneCamStateBuffer();
-  double prune_cam_states_time = (
-      ros::Time::now()-start_time).toSec();
+  double prune_cam_states_time = (ros::Time::now()-start_time).toSec();
 
   // Publish the odometry.
   start_time = ros::Time::now();
   publish(msg->header.stamp);
-  double publish_time = (
-      ros::Time::now()-start_time).toSec();
+  double publish_time = (ros::Time::now()-start_time).toSec();
 
   // Reset the system if necessary.
   onlineReset();
@@ -446,8 +430,7 @@ void MsckfVio::featureCallback(
   return;
 }
 
-void MsckfVio::mocapOdomCallback(
-    const nav_msgs::OdometryConstPtr& msg) {
+void MsckfVio::mocapOdomCallback(const nav_msgs::OdometryConstPtr& msg) {
   static bool first_mocap_odom_msg = true;
 
   // If this is the first mocap odometry messsage, set
@@ -455,10 +438,8 @@ void MsckfVio::mocapOdomCallback(
   if (first_mocap_odom_msg) {
     Quaterniond orientation;
     Vector3d translation;
-    tf::pointMsgToEigen(
-        msg->pose.pose.position, translation);
-    tf::quaternionMsgToEigen(
-        msg->pose.pose.orientation, orientation);
+    tf::pointMsgToEigen(msg->pose.pose.position, translation);
+    tf::quaternionMsgToEigen(msg->pose.pose.orientation, orientation);
     //tf::vectorMsgToEigen(
     //    msg->transform.translation, translation);
     //tf::quaternionMsgToEigen(
@@ -475,10 +456,8 @@ void MsckfVio::mocapOdomCallback(
   //    msg->transform.translation, translation);
   //tf::quaternionMsgToEigen(
   //    msg->transform.rotation, orientation);
-  tf::pointMsgToEigen(
-      msg->pose.pose.position, translation);
-  tf::quaternionMsgToEigen(
-      msg->pose.pose.orientation, orientation);
+  tf::pointMsgToEigen(msg->pose.pose.position, translation);
+  tf::quaternionMsgToEigen(msg->pose.pose.orientation, orientation);
 
   Eigen::Isometry3d T_b_v_gt;
   T_b_v_gt.linear() = orientation.toRotationMatrix();
@@ -538,15 +517,12 @@ void MsckfVio::batchImuProcessing(const double& time_bound) {
   state_server.imu_state.id = IMUState::next_id++;
 
   // Remove all used IMU msgs.
-  imu_msg_buffer.erase(imu_msg_buffer.begin(),
-      imu_msg_buffer.begin()+used_imu_msg_cntr);
+  imu_msg_buffer.erase(imu_msg_buffer.begin(), imu_msg_buffer.begin()+used_imu_msg_cntr);
 
   return;
 }
 
-void MsckfVio::processModel(const double& time,
-    const Vector3d& m_gyro,
-    const Vector3d& m_acc) {
+void MsckfVio::processModel(const double& time, const Vector3d& m_gyro, const Vector3d& m_acc) {
 
   // Remove the bias from the measured gyro and acceleration
   IMUState& imu_state = state_server.imu_state;
@@ -558,19 +534,16 @@ void MsckfVio::processModel(const double& time,
   Matrix<double, 21, 21> F = Matrix<double, 21, 21>::Zero();
   Matrix<double, 21, 12> G = Matrix<double, 21, 12>::Zero();
 
-  F.block<3, 3>(0, 0) = -skewSymmetric(gyro);
-  F.block<3, 3>(0, 3) = -Matrix3d::Identity();
-  F.block<3, 3>(6, 0) = -quaternionToRotation(
-      imu_state.orientation).transpose()*skewSymmetric(acc);
-  F.block<3, 3>(6, 9) = -quaternionToRotation(
-      imu_state.orientation).transpose();
-  F.block<3, 3>(12, 6) = Matrix3d::Identity();
+  F.block<3, 3>(0, 0)  = -skewSymmetric(gyro);
+  F.block<3, 3>(0, 3)  = -Matrix3d::Identity();
+  F.block<3, 3>(6, 0)  = -quaternionToRotation(imu_state.orientation).transpose()*skewSymmetric(acc);
+  F.block<3, 3>(6, 9)  = -quaternionToRotation(imu_state.orientation).transpose();
+  F.block<3, 3>(12, 6) =  Matrix3d::Identity();
 
   G.block<3, 3>(0, 0) = -Matrix3d::Identity();
-  G.block<3, 3>(3, 3) = Matrix3d::Identity();
-  G.block<3, 3>(6, 6) = -quaternionToRotation(
-      imu_state.orientation).transpose();
-  G.block<3, 3>(9, 9) = Matrix3d::Identity();
+  G.block<3, 3>(3, 3) =  Matrix3d::Identity();
+  G.block<3, 3>(6, 6) = -quaternionToRotation(imu_state.orientation).transpose();
+  G.block<3, 3>(9, 9) =  Matrix3d::Identity();
 
   // Approximate matrix exponential to the 3rd order,
   // which can be considered to be accurate enough assuming
@@ -578,50 +551,39 @@ void MsckfVio::processModel(const double& time,
   Matrix<double, 21, 21> Fdt = F * dtime;
   Matrix<double, 21, 21> Fdt_square = Fdt * Fdt;
   Matrix<double, 21, 21> Fdt_cube = Fdt_square * Fdt;
-  Matrix<double, 21, 21> Phi = Matrix<double, 21, 21>::Identity() +
-    Fdt + 0.5*Fdt_square + (1.0/6.0)*Fdt_cube;
+  Matrix<double, 21, 21> Phi = Matrix<double, 21, 21>::Identity() + Fdt + 0.5*Fdt_square + (1.0/6.0)*Fdt_cube;
 
   // Propogate the state using 4th order Runge-Kutta
   predictNewState(dtime, gyro, acc);
 
   // Modify the transition matrix
   Matrix3d R_kk_1 = quaternionToRotation(imu_state.orientation_null);
-  Phi.block<3, 3>(0, 0) =
-    quaternionToRotation(imu_state.orientation) * R_kk_1.transpose();
+  Phi.block<3, 3>(0, 0) = quaternionToRotation(imu_state.orientation) * R_kk_1.transpose();
 
   Vector3d u = R_kk_1 * IMUState::gravity;
   RowVector3d s = (u.transpose()*u).inverse() * u.transpose();
 
   Matrix3d A1 = Phi.block<3, 3>(6, 0);
-  Vector3d w1 = skewSymmetric(
-      imu_state.velocity_null-imu_state.velocity) * IMUState::gravity;
+  Vector3d w1 = skewSymmetric(imu_state.velocity_null-imu_state.velocity) * IMUState::gravity;
   Phi.block<3, 3>(6, 0) = A1 - (A1*u-w1)*s;
 
   Matrix3d A2 = Phi.block<3, 3>(12, 0);
-  Vector3d w2 = skewSymmetric(
-      dtime*imu_state.velocity_null+imu_state.position_null-
-      imu_state.position) * IMUState::gravity;
+  Vector3d w2 =
+          skewSymmetric(dtime*imu_state.velocity_null+imu_state.position_null-imu_state.position) * IMUState::gravity;
   Phi.block<3, 3>(12, 0) = A2 - (A2*u-w2)*s;
 
   // Propogate the state covariance matrix.
-  Matrix<double, 21, 21> Q = Phi*G*state_server.continuous_noise_cov*
-    G.transpose()*Phi.transpose()*dtime;
-  state_server.state_cov.block<21, 21>(0, 0) =
-    Phi*state_server.state_cov.block<21, 21>(0, 0)*Phi.transpose() + Q;
+  Matrix<double, 21, 21> Q = Phi*G*state_server.continuous_noise_cov*G.transpose()*Phi.transpose()*dtime;
+  state_server.state_cov.block<21, 21>(0, 0) = Phi*state_server.state_cov.block<21, 21>(0, 0)*Phi.transpose() + Q;
 
   if (state_server.cam_states.size() > 0) {
-    state_server.state_cov.block(
-        0, 21, 21, state_server.state_cov.cols()-21) =
-      Phi * state_server.state_cov.block(
-        0, 21, 21, state_server.state_cov.cols()-21);
-    state_server.state_cov.block(
-        21, 0, state_server.state_cov.rows()-21, 21) =
-      state_server.state_cov.block(
-        21, 0, state_server.state_cov.rows()-21, 21) * Phi.transpose();
+    state_server.state_cov.block(0, 21, 21, state_server.state_cov.cols()-21) =
+      Phi * state_server.state_cov.block(0, 21, 21, state_server.state_cov.cols()-21);
+    state_server.state_cov.block(21, 0, state_server.state_cov.rows()-21, 21) =
+      state_server.state_cov.block(21, 0, state_server.state_cov.rows()-21, 21) * Phi.transpose();
   }
 
-  MatrixXd state_cov_fixed = (state_server.state_cov +
-      state_server.state_cov.transpose()) / 2.0;
+  MatrixXd state_cov_fixed = (state_server.state_cov +state_server.state_cov.transpose()) / 2.0;
   state_server.state_cov = state_cov_fixed;
 
   // Update the state correspondes to null space.
@@ -634,16 +596,14 @@ void MsckfVio::processModel(const double& time,
   return;
 }
 
-void MsckfVio::predictNewState(const double& dt,
-    const Vector3d& gyro,
-    const Vector3d& acc) {
+void MsckfVio::predictNewState(const double& dt, const Vector3d& gyro, const Vector3d& acc) {
 
   // TODO: Will performing the forward integration using
   //    the inverse of the quaternion give better accuracy?
   double gyro_norm = gyro.norm();
   Matrix4d Omega = Matrix4d::Zero();
   Omega.block<3, 3>(0, 0) = -skewSymmetric(gyro);
-  Omega.block<3, 1>(0, 3) = gyro;
+  Omega.block<3, 1>(0, 3) =  gyro;
   Omega.block<1, 3>(3, 0) = -gyro;
 
   Vector4d& q = state_server.imu_state.orientation;
@@ -653,41 +613,33 @@ void MsckfVio::predictNewState(const double& dt,
   // Some pre-calculation
   Vector4d dq_dt, dq_dt2;
   if (gyro_norm > 1e-5) {
-    dq_dt = (cos(gyro_norm*dt*0.5)*Matrix4d::Identity() +
-      1/gyro_norm*sin(gyro_norm*dt*0.5)*Omega) * q;
-    dq_dt2 = (cos(gyro_norm*dt*0.25)*Matrix4d::Identity() +
-      1/gyro_norm*sin(gyro_norm*dt*0.25)*Omega) * q;
+    dq_dt = (cos(gyro_norm*dt*0.5)*Matrix4d::Identity() + 1/gyro_norm*sin(gyro_norm*dt*0.5)*Omega) * q;
+    dq_dt2 = (cos(gyro_norm*dt*0.25)*Matrix4d::Identity() + 1/gyro_norm*sin(gyro_norm*dt*0.25)*Omega) * q;
   }
   else {
-    dq_dt = (Matrix4d::Identity()+0.5*dt*Omega) *
-      cos(gyro_norm*dt*0.5) * q;
-    dq_dt2 = (Matrix4d::Identity()+0.25*dt*Omega) *
-      cos(gyro_norm*dt*0.25) * q;
+    dq_dt = (Matrix4d::Identity()+0.5*dt*Omega) * cos(gyro_norm*dt*0.5) * q;
+    dq_dt2 = (Matrix4d::Identity()+0.25*dt*Omega) * cos(gyro_norm*dt*0.25) * q;
   }
-  Matrix3d dR_dt_transpose = quaternionToRotation(dq_dt).transpose();
+  Matrix3d dR_dt_transpose  = quaternionToRotation(dq_dt).transpose();
   Matrix3d dR_dt2_transpose = quaternionToRotation(dq_dt2).transpose();
 
   // k1 = f(tn, yn)
-  Vector3d k1_v_dot = quaternionToRotation(q).transpose()*acc +
-    IMUState::gravity;
+  Vector3d k1_v_dot = quaternionToRotation(q).transpose()*acc + IMUState::gravity;
   Vector3d k1_p_dot = v;
 
   // k2 = f(tn+dt/2, yn+k1*dt/2)
   Vector3d k1_v = v + k1_v_dot*dt/2;
-  Vector3d k2_v_dot = dR_dt2_transpose*acc +
-    IMUState::gravity;
+  Vector3d k2_v_dot = dR_dt2_transpose*acc + IMUState::gravity;
   Vector3d k2_p_dot = k1_v;
 
   // k3 = f(tn+dt/2, yn+k2*dt/2)
   Vector3d k2_v = v + k2_v_dot*dt/2;
-  Vector3d k3_v_dot = dR_dt2_transpose*acc +
-    IMUState::gravity;
+  Vector3d k3_v_dot = dR_dt2_transpose*acc + IMUState::gravity;
   Vector3d k3_p_dot = k2_v;
 
   // k4 = f(tn+dt, yn+k3*dt)
   Vector3d k3_v = v + k3_v_dot*dt;
-  Vector3d k4_v_dot = dR_dt_transpose*acc +
-    IMUState::gravity;
+  Vector3d k4_v_dot = dR_dt_transpose*acc + IMUState::gravity;
   Vector3d k4_p_dot = k3_v;
 
   // yn+1 = yn + dt/6*(k1+2*k2+2*k3+k4)
@@ -705,16 +657,12 @@ void MsckfVio::stateAugmentation(const double& time) {
   const Vector3d& t_c_i = state_server.imu_state.t_cam0_imu;
 
   // Add a new camera state to the state server.
-  Matrix3d R_w_i = quaternionToRotation(
-      state_server.imu_state.orientation);
+  Matrix3d R_w_i = quaternionToRotation(state_server.imu_state.orientation);
   Matrix3d R_w_c = R_i_c * R_w_i;
-  Vector3d t_c_w = state_server.imu_state.position +
-    R_w_i.transpose()*t_c_i;
+  Vector3d t_c_w = state_server.imu_state.position + R_w_i.transpose()*t_c_i;
 
-  state_server.cam_states[state_server.imu_state.id] =
-    CAMState(state_server.imu_state.id);
-  CAMState& cam_state = state_server.cam_states[
-    state_server.imu_state.id];
+  state_server.cam_states[state_server.imu_state.id] = CAMState(state_server.imu_state.id);
+  CAMState& cam_state = state_server.cam_states[state_server.imu_state.id];
 
   cam_state.time = time;
   cam_state.orientation = rotationToQuaternion(R_w_c);
@@ -741,28 +689,23 @@ void MsckfVio::stateAugmentation(const double& time) {
   state_server.state_cov.conservativeResize(old_rows+6, old_cols+6);
 
   // Rename some matrix blocks for convenience.
-  const Matrix<double, 21, 21>& P11 =
-    state_server.state_cov.block<21, 21>(0, 0);
-  const MatrixXd& P12 =
-    state_server.state_cov.block(0, 21, 21, old_cols-21);
+  const Matrix<double, 21, 21>& P11 = state_server.state_cov.block<21, 21>(0, 0);
+  const MatrixXd& P12 = state_server.state_cov.block(0, 21, 21, old_cols-21);
 
   // Fill in the augmented state covariance.
   state_server.state_cov.block(old_rows, 0, 6, old_cols) << J*P11, J*P12;
   state_server.state_cov.block(0, old_cols, old_rows, 6) =
     state_server.state_cov.block(old_rows, 0, 6, old_cols).transpose();
-  state_server.state_cov.block<6, 6>(old_rows, old_cols) =
-    J * P11 * J.transpose();
+  state_server.state_cov.block<6, 6>(old_rows, old_cols) = J * P11 * J.transpose();
 
   // Fix the covariance to be symmetric
-  MatrixXd state_cov_fixed = (state_server.state_cov +
-      state_server.state_cov.transpose()) / 2.0;
+  MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
   state_server.state_cov = state_cov_fixed;
 
   return;
 }
 
-void MsckfVio::addFeatureObservations(
-    const CameraMeasurementConstPtr& msg) {
+void MsckfVio::addFeatureObservations(const CameraMeasurementConstPtr& msg) {
 
   StateIDType state_id = state_server.imu_state.id;
   int curr_feature_num = map_server.size();
@@ -774,21 +717,15 @@ void MsckfVio::addFeatureObservations(
     if (map_server.find(feature.id) == map_server.end()) {
       // This is a new feature.
       map_server[feature.id] = Feature(feature.id);
-      map_server[feature.id].observations[state_id] =
-        Vector4d(feature.u0, feature.v0,
-            feature.u1, feature.v1);
+      map_server[feature.id].observations[state_id] = Vector4d(feature.u0, feature.v0, feature.u1, feature.v1);
     } else {
       // This is an old feature.
-      map_server[feature.id].observations[state_id] =
-        Vector4d(feature.u0, feature.v0,
-            feature.u1, feature.v1);
+      map_server[feature.id].observations[state_id] = Vector4d(feature.u0, feature.v0, feature.u1, feature.v1);
       ++tracked_feature_num;
     }
   }
 
-  tracking_rate =
-    static_cast<double>(tracked_feature_num) /
-    static_cast<double>(curr_feature_num);
+  tracking_rate = static_cast<double>(tracked_feature_num) / static_cast<double>(curr_feature_num);
 
   return;
 }
@@ -852,16 +789,13 @@ void MsckfVio::measurementJacobian(
   // observability constrain.
   Matrix<double, 4, 6> A = H_x;
   Matrix<double, 6, 1> u = Matrix<double, 6, 1>::Zero();
-  u.block<3, 1>(0, 0) = quaternionToRotation(
-      cam_state.orientation_null) * IMUState::gravity;
-  u.block<3, 1>(3, 0) = skewSymmetric(
-      p_w-cam_state.position_null) * IMUState::gravity;
+  u.block<3, 1>(0, 0) = quaternionToRotation(cam_state.orientation_null) * IMUState::gravity;
+  u.block<3, 1>(3, 0) = skewSymmetric(p_w-cam_state.position_null) * IMUState::gravity;
   H_x = A - A*u*(u.transpose()*u).inverse()*u.transpose();
   H_f = -H_x.block<4, 3>(0, 3);
 
   // Compute the residual.
-  r = z - Vector4d(p_c0(0)/p_c0(2), p_c0(1)/p_c0(2),
-      p_c1(0)/p_c1(2), p_c1(1)/p_c1(2));
+  r = z - Vector4d(p_c0(0)/p_c0(2), p_c0(1)/p_c0(2), p_c1(0)/p_c1(2), p_c1(1)/p_c1(2));
 
   return;
 }
@@ -877,8 +811,8 @@ void MsckfVio::featureJacobian(
   // id camera has actually seen this feature.
   vector<StateIDType> valid_cam_state_ids(0);
   for (const auto& cam_id : cam_state_ids) {
-    if (feature.observations.find(cam_id) ==
-        feature.observations.end()) continue;
+    if (feature.observations.find(cam_id) == feature.observations.end())
+        continue;
 
     valid_cam_state_ids.push_back(cam_id);
   }
@@ -886,8 +820,7 @@ void MsckfVio::featureJacobian(
   int jacobian_row_size = 0;
   jacobian_row_size = 4 * valid_cam_state_ids.size();
 
-  MatrixXd H_xj = MatrixXd::Zero(jacobian_row_size,
-      21+state_server.cam_states.size()*6);
+  MatrixXd H_xj = MatrixXd::Zero(jacobian_row_size, 21+state_server.cam_states.size()*6);
   MatrixXd H_fj = MatrixXd::Zero(jacobian_row_size, 3);
   VectorXd r_j = VectorXd::Zero(jacobian_row_size);
   int stack_cntr = 0;
@@ -900,8 +833,7 @@ void MsckfVio::featureJacobian(
     measurementJacobian(cam_id, feature.id, H_xi, H_fi, r_i);
 
     auto cam_state_iter = state_server.cam_states.find(cam_id);
-    int cam_state_cntr = std::distance(
-        state_server.cam_states.begin(), cam_state_iter);
+    int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
 
     // Stack the Jacobians.
     H_xj.block<4, 6>(stack_cntr, 21+6*cam_state_cntr) = H_xi;
@@ -913,8 +845,7 @@ void MsckfVio::featureJacobian(
   // Project the residual and Jacobians onto the nullspace
   // of H_fj.
   JacobiSVD<MatrixXd> svd_helper(H_fj, ComputeFullU | ComputeThinV);
-  MatrixXd A = svd_helper.matrixU().rightCols(
-      jacobian_row_size - 3);
+  MatrixXd A = svd_helper.matrixU().rightCols(jacobian_row_size - 3);
 
   H_x = A.transpose() * H_xj;
   r = A.transpose() * r_j;
@@ -922,10 +853,10 @@ void MsckfVio::featureJacobian(
   return;
 }
 
-void MsckfVio::measurementUpdate(
-    const MatrixXd& H, const VectorXd& r) {
+void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
-  if (H.rows() == 0 || r.rows() == 0) return;
+  if (H.rows() == 0 || r.rows() == 0)
+      return;
 
   // Decompose the final Jacobian matrix to reduce computational
   // complexity as in Equation (28), (29).
@@ -962,9 +893,7 @@ void MsckfVio::measurementUpdate(
 
   // Compute the Kalman gain.
   const MatrixXd& P = state_server.state_cov;
-  MatrixXd S = H_thin*P*H_thin.transpose() +
-      Feature::observation_noise*MatrixXd::Identity(
-        H_thin.rows(), H_thin.rows());
+  MatrixXd S = H_thin*P*H_thin.transpose() + Feature::observation_noise*MatrixXd::Identity(H_thin.rows(), H_thin.rows());
   //MatrixXd K_transpose = S.fullPivHouseholderQr().solve(H_thin*P);
   MatrixXd K_transpose = S.ldlt().solve(H_thin*P);
   MatrixXd K = K_transpose.transpose();
@@ -986,29 +915,23 @@ void MsckfVio::measurementUpdate(
     //return;
   }
 
-  const Vector4d dq_imu =
-    smallAngleQuaternion(delta_x_imu.head<3>());
-  state_server.imu_state.orientation = quaternionMultiplication(
-      dq_imu, state_server.imu_state.orientation);
+  const Vector4d dq_imu = smallAngleQuaternion(delta_x_imu.head<3>());
+  state_server.imu_state.orientation = quaternionMultiplication(dq_imu, state_server.imu_state.orientation);
   state_server.imu_state.gyro_bias += delta_x_imu.segment<3>(3);
-  state_server.imu_state.velocity += delta_x_imu.segment<3>(6);
-  state_server.imu_state.acc_bias += delta_x_imu.segment<3>(9);
-  state_server.imu_state.position += delta_x_imu.segment<3>(12);
+  state_server.imu_state.velocity  += delta_x_imu.segment<3>(6);
+  state_server.imu_state.acc_bias  += delta_x_imu.segment<3>(9);
+  state_server.imu_state.position  += delta_x_imu.segment<3>(12);
 
-  const Vector4d dq_extrinsic =
-    smallAngleQuaternion(delta_x_imu.segment<3>(15));
-  state_server.imu_state.R_imu_cam0 = quaternionToRotation(
-      dq_extrinsic) * state_server.imu_state.R_imu_cam0;
+  const Vector4d dq_extrinsic = smallAngleQuaternion(delta_x_imu.segment<3>(15));
+  state_server.imu_state.R_imu_cam0 = quaternionToRotation(dq_extrinsic) * state_server.imu_state.R_imu_cam0;
   state_server.imu_state.t_cam0_imu += delta_x_imu.segment<3>(18);
 
   // Update the camera states.
   auto cam_state_iter = state_server.cam_states.begin();
-  for (int i = 0; i < state_server.cam_states.size();
-      ++i, ++cam_state_iter) {
+  for (int i = 0; i < state_server.cam_states.size(); ++i, ++cam_state_iter) {
     const VectorXd& delta_x_cam = delta_x.segment<6>(21+i*6);
     const Vector4d dq_cam = smallAngleQuaternion(delta_x_cam.head<3>());
-    cam_state_iter->second.orientation = quaternionMultiplication(
-        dq_cam, cam_state_iter->second.orientation);
+    cam_state_iter->second.orientation = quaternionMultiplication(dq_cam, cam_state_iter->second.orientation);
     cam_state_iter->second.position += delta_x_cam.tail<3>();
   }
 
@@ -1019,19 +942,16 @@ void MsckfVio::measurementUpdate(
   state_server.state_cov = I_KH*state_server.state_cov;
 
   // Fix the covariance to be symmetric
-  MatrixXd state_cov_fixed = (state_server.state_cov +
-      state_server.state_cov.transpose()) / 2.0;
+  MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
   state_server.state_cov = state_cov_fixed;
 
   return;
 }
 
-bool MsckfVio::gatingTest(
-    const MatrixXd& H, const VectorXd& r, const int& dof) {
+bool MsckfVio::gatingTest(const MatrixXd& H, const VectorXd& r, const int& dof) {
 
   MatrixXd P1 = H * state_server.state_cov * H.transpose();
-  MatrixXd P2 = Feature::observation_noise *
-    MatrixXd::Identity(H.rows(), H.rows());
+  MatrixXd P2 = Feature::observation_noise * MatrixXd::Identity(H.rows(), H.rows());
   double gamma = r.transpose() * (P1+P2).ldlt().solve(r);
 
   //cout << dof << " " << gamma << " " <<
@@ -1054,14 +974,13 @@ void MsckfVio::removeLostFeatures() {
   vector<FeatureIDType> invalid_feature_ids(0);
   vector<FeatureIDType> processed_feature_ids(0);
 
-  for (auto iter = map_server.begin();
-      iter != map_server.end(); ++iter) {
+  for (auto iter = map_server.begin(); iter != map_server.end(); ++iter) {
     // Rename the feature to be checked.
     auto& feature = iter->second;
 
     // Pass the features that are still being tracked.
-    if (feature.observations.find(state_server.imu_state.id) !=
-        feature.observations.end()) continue;
+    if (feature.observations.find(state_server.imu_state.id) != feature.observations.end())
+        continue;
     if (feature.observations.size() < 3) {
       invalid_feature_ids.push_back(feature.id);
       continue;
@@ -1095,10 +1014,10 @@ void MsckfVio::removeLostFeatures() {
     map_server.erase(feature_id);
 
   // Return if there is no lost feature to be processed.
-  if (processed_feature_ids.size() == 0) return;
+  if (processed_feature_ids.size() == 0)
+      return;
 
-  MatrixXd H_x = MatrixXd::Zero(jacobian_row_size,
-      21+6*state_server.cam_states.size());
+  MatrixXd H_x = MatrixXd::Zero(jacobian_row_size, 21+6*state_server.cam_states.size());
   VectorXd r = VectorXd::Zero(jacobian_row_size);
   int stack_cntr = 0;
 
@@ -1122,7 +1041,8 @@ void MsckfVio::removeLostFeatures() {
 
     // Put an upper bound on the row size of measurement Jacobian,
     // which helps guarantee the executation time.
-    if (stack_cntr > 1500) break;
+    if (stack_cntr > 1500)
+        break;
   }
 
   H_x.conservativeResize(stack_cntr, H_x.cols());
@@ -1138,8 +1058,7 @@ void MsckfVio::removeLostFeatures() {
   return;
 }
 
-void MsckfVio::findRedundantCamStates(
-    vector<StateIDType>& rm_cam_state_ids) {
+void MsckfVio::findRedundantCamStates(vector<StateIDType>& rm_cam_state_ids) {
 
   // Move the iterator to the key position.
   auto key_cam_state_iter = state_server.cam_states.end();
@@ -1150,22 +1069,17 @@ void MsckfVio::findRedundantCamStates(
   auto first_cam_state_iter = state_server.cam_states.begin();
 
   // Pose of the key camera state.
-  const Vector3d key_position =
-    key_cam_state_iter->second.position;
-  const Matrix3d key_rotation = quaternionToRotation(
-      key_cam_state_iter->second.orientation);
+  const Vector3d key_position = key_cam_state_iter->second.position;
+  const Matrix3d key_rotation = quaternionToRotation(key_cam_state_iter->second.orientation);
 
   // Mark the camera states to be removed based on the
   // motion between states.
   for (int i = 0; i < 2; ++i) {
-    const Vector3d position =
-      cam_state_iter->second.position;
-    const Matrix3d rotation = quaternionToRotation(
-        cam_state_iter->second.orientation);
+    const Vector3d position = cam_state_iter->second.position;
+    const Matrix3d rotation = quaternionToRotation(cam_state_iter->second.orientation);
 
     double distance = (position-key_position).norm();
-    double angle = AngleAxisd(
-        rotation*key_rotation.transpose()).angle();
+    double angle = AngleAxisd(rotation*key_rotation.transpose()).angle();
 
     if (angle < rotation_threshold &&
         distance < translation_threshold &&
@@ -1201,8 +1115,7 @@ void MsckfVio::pruneCamStateBuffer() {
     // with this feature.
     vector<StateIDType> involved_cam_state_ids(0);
     for (const auto& cam_id : rm_cam_state_ids) {
-      if (feature.observations.find(cam_id) !=
-          feature.observations.end())
+      if (feature.observations.find(cam_id) != feature.observations.end())
         involved_cam_state_ids.push_back(cam_id);
     }
 
@@ -1236,8 +1149,7 @@ void MsckfVio::pruneCamStateBuffer() {
   //cout << "jacobian row #: " << jacobian_row_size << endl;
 
   // Compute the Jacobian and residual.
-  MatrixXd H_x = MatrixXd::Zero(jacobian_row_size,
-      21+6*state_server.cam_states.size());
+  MatrixXd H_x = MatrixXd::Zero(jacobian_row_size, 21+6*state_server.cam_states.size());
   VectorXd r = VectorXd::Zero(jacobian_row_size);
   int stack_cntr = 0;
 
@@ -1247,8 +1159,7 @@ void MsckfVio::pruneCamStateBuffer() {
     // with this feature.
     vector<StateIDType> involved_cam_state_ids(0);
     for (const auto& cam_id : rm_cam_state_ids) {
-      if (feature.observations.find(cam_id) !=
-          feature.observations.end())
+      if (feature.observations.find(cam_id) != feature.observations.end())
         involved_cam_state_ids.push_back(cam_id);
     }
 
@@ -1275,33 +1186,22 @@ void MsckfVio::pruneCamStateBuffer() {
   measurementUpdate(H_x, r);
 
   for (const auto& cam_id : rm_cam_state_ids) {
-    int cam_sequence = std::distance(state_server.cam_states.begin(),
-        state_server.cam_states.find(cam_id));
+    int cam_sequence = std::distance(state_server.cam_states.begin(), state_server.cam_states.find(cam_id));
     int cam_state_start = 21 + 6*cam_sequence;
     int cam_state_end = cam_state_start + 6;
 
     // Remove the corresponding rows and columns in the state
     // covariance matrix.
     if (cam_state_end < state_server.state_cov.rows()) {
-      state_server.state_cov.block(cam_state_start, 0,
-          state_server.state_cov.rows()-cam_state_end,
-          state_server.state_cov.cols()) =
-        state_server.state_cov.block(cam_state_end, 0,
-            state_server.state_cov.rows()-cam_state_end,
-            state_server.state_cov.cols());
+      state_server.state_cov.block(cam_state_start, 0, state_server.state_cov.rows()-cam_state_end, state_server.state_cov.cols()) =
+        state_server.state_cov.block(cam_state_end, 0, state_server.state_cov.rows()-cam_state_end, state_server.state_cov.cols());
 
-      state_server.state_cov.block(0, cam_state_start,
-          state_server.state_cov.rows(),
-          state_server.state_cov.cols()-cam_state_end) =
-        state_server.state_cov.block(0, cam_state_end,
-            state_server.state_cov.rows(),
-            state_server.state_cov.cols()-cam_state_end);
+      state_server.state_cov.block(0, cam_state_start, state_server.state_cov.rows(), state_server.state_cov.cols()-cam_state_end) =
+        state_server.state_cov.block(0, cam_state_end, state_server.state_cov.rows(), state_server.state_cov.cols()-cam_state_end);
 
-      state_server.state_cov.conservativeResize(
-          state_server.state_cov.rows()-6, state_server.state_cov.cols()-6);
+      state_server.state_cov.conservativeResize(state_server.state_cov.rows()-6, state_server.state_cov.cols()-6);
     } else {
-      state_server.state_cov.conservativeResize(
-          state_server.state_cov.rows()-6, state_server.state_cov.cols()-6);
+      state_server.state_cov.conservativeResize(state_server.state_cov.rows()-6, state_server.state_cov.cols()-6);
     }
 
     // Remove this camera state in the state vector.
@@ -1315,7 +1215,8 @@ void MsckfVio::onlineReset() {
 
   // Never perform online reset if position std threshold
   // is non-positive.
-  if (position_std_threshold <= 0) return;
+  if (position_std_threshold <= 0)
+      return;
   static long long int online_reset_counter = 0;
 
   // Check the uncertainty of positions to determine if
@@ -1328,10 +1229,8 @@ void MsckfVio::onlineReset() {
       position_y_std < position_std_threshold &&
       position_z_std < position_std_threshold) return;
 
-  ROS_WARN("Start %lld online reset procedure...",
-      ++online_reset_counter);
-  ROS_INFO("Stardard deviation in xyz: %f, %f, %f",
-      position_x_std, position_y_std, position_z_std);
+  ROS_WARN("Start %lld online reset procedure...", ++online_reset_counter);
+  ROS_INFO("Stardard deviation in xyz: %f, %f, %f", position_x_std, position_y_std, position_z_std);
 
   // Remove all existing camera states.
   state_server.cam_states.clear();
@@ -1341,18 +1240,13 @@ void MsckfVio::onlineReset() {
 
   // Reset the state covariance.
   double gyro_bias_cov, acc_bias_cov, velocity_cov;
-  nh.param<double>("initial_covariance/velocity",
-      velocity_cov, 0.25);
-  nh.param<double>("initial_covariance/gyro_bias",
-      gyro_bias_cov, 1e-4);
-  nh.param<double>("initial_covariance/acc_bias",
-      acc_bias_cov, 1e-2);
+  nh.param<double>("initial_covariance/velocity", velocity_cov, 0.25);
+  nh.param<double>("initial_covariance/gyro_bias", gyro_bias_cov, 1e-4);
+  nh.param<double>("initial_covariance/acc_bias", acc_bias_cov, 1e-2);
 
   double extrinsic_rotation_cov, extrinsic_translation_cov;
-  nh.param<double>("initial_covariance/extrinsic_rotation_cov",
-      extrinsic_rotation_cov, 3.0462e-4);
-  nh.param<double>("initial_covariance/extrinsic_translation_cov",
-      extrinsic_translation_cov, 1e-4);
+  nh.param<double>("initial_covariance/extrinsic_rotation_cov", extrinsic_rotation_cov, 3.0462e-4);
+  nh.param<double>("initial_covariance/extrinsic_translation_cov", extrinsic_translation_cov, 1e-4);
 
   state_server.state_cov = MatrixXd::Zero(21, 21);
   for (int i = 3; i < 6; ++i)
@@ -1375,21 +1269,17 @@ void MsckfVio::publish(const ros::Time& time) {
   // Convert the IMU frame to the body frame.
   const IMUState& imu_state = state_server.imu_state;
   Eigen::Isometry3d T_i_w = Eigen::Isometry3d::Identity();
-  T_i_w.linear() = quaternionToRotation(
-      imu_state.orientation).transpose();
+  T_i_w.linear() = quaternionToRotation(imu_state.orientation).transpose();
   T_i_w.translation() = imu_state.position;
 
-  Eigen::Isometry3d T_b_w = IMUState::T_imu_body * T_i_w *
-    IMUState::T_imu_body.inverse();
-  Eigen::Vector3d body_velocity =
-    IMUState::T_imu_body.linear() * imu_state.velocity;
+  Eigen::Isometry3d T_b_w = IMUState::T_imu_body * T_i_w * IMUState::T_imu_body.inverse();
+  Eigen::Vector3d body_velocity = IMUState::T_imu_body.linear() * imu_state.velocity;
 
   // Publish tf
   if (publish_tf) {
     tf::Transform T_b_w_tf;
     tf::transformEigenToTF(T_b_w, T_b_w_tf);
-    tf_pub.sendTransform(tf::StampedTransform(
-          T_b_w_tf, time, fixed_frame_id, child_frame_id));
+    tf_pub.sendTransform(tf::StampedTransform(T_b_w_tf, time, fixed_frame_id, child_frame_id));
   }
 
   // Publish the odometry
@@ -1412,8 +1302,7 @@ void MsckfVio::publish(const ros::Time& time) {
   Matrix<double, 6, 6> H_pose = Matrix<double, 6, 6>::Zero();
   H_pose.block<3, 3>(0, 0) = IMUState::T_imu_body.linear();
   H_pose.block<3, 3>(3, 3) = IMUState::T_imu_body.linear();
-  Matrix<double, 6, 6> P_body_pose = H_pose *
-    P_imu_pose * H_pose.transpose();
+  Matrix<double, 6, 6> P_body_pose = H_pose * P_imu_pose * H_pose.transpose();
 
   for (int i = 0; i < 6; ++i)
     for (int j = 0; j < 6; ++j)
@@ -1442,17 +1331,14 @@ void MsckfVio::publish(const ros::Time& time) {
 
   // Publish the 3D positions of the features that
   // has been initialized.
-  pcl::PointCloud<pcl::PointXYZ>::Ptr feature_msg_ptr(
-      new pcl::PointCloud<pcl::PointXYZ>());
+  pcl::PointCloud<pcl::PointXYZ>::Ptr feature_msg_ptr(new pcl::PointCloud<pcl::PointXYZ>());
   feature_msg_ptr->header.frame_id = fixed_frame_id;
   feature_msg_ptr->height = 1;
   for (const auto& item : map_server) {
     const auto& feature = item.second;
     if (feature.is_initialized) {
-      Vector3d feature_position =
-        IMUState::T_imu_body.linear() * feature.position;
-      feature_msg_ptr->points.push_back(pcl::PointXYZ(
-            feature_position(0), feature_position(1), feature_position(2)));
+      Vector3d feature_position = IMUState::T_imu_body.linear() * feature.position;
+      feature_msg_ptr->points.push_back(pcl::PointXYZ(feature_position(0), feature_position(1), feature_position(2)));
     }
   }
   feature_msg_ptr->width = feature_msg_ptr->points.size();

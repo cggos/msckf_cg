@@ -181,10 +181,8 @@ bool ImageProcessor::loadParameters() {
 }
 
 bool ImageProcessor::createRosIO() {
-  feature_pub = nh.advertise<CameraMeasurement>(
-      "features", 3);
-  tracking_info_pub = nh.advertise<TrackingInfo>(
-      "tracking_info", 1);
+  feature_pub = nh.advertise<CameraMeasurement>("features", 3);
+  tracking_info_pub = nh.advertise<TrackingInfo>("tracking_info", 1);
   image_transport::ImageTransport it(nh);
   debug_stereo_pub = it.advertise("debug_stereo_image", 1);
 
@@ -192,37 +190,42 @@ bool ImageProcessor::createRosIO() {
   cam1_img_sub.subscribe(nh, "cam1_image", 10);
   stereo_sub.connectInput(cam0_img_sub, cam1_img_sub);
   stereo_sub.registerCallback(&ImageProcessor::stereoCallback, this);
-  imu_sub = nh.subscribe("imu", 50,
-      &ImageProcessor::imuCallback, this);
+  imu_sub = nh.subscribe("imu", 50, &ImageProcessor::imuCallback, this);
 
   return true;
 }
 
+/**
+ * @brief 初始化
+ * @return
+ */
 bool ImageProcessor::initialize() {
-  if (!loadParameters()) return false;
+  if (!loadParameters())
+      return false;
   ROS_INFO("Finish loading ROS parameters...");
 
   // Create feature detector.
-  detector_ptr = FastFeatureDetector::create(
-      processor_config.fast_threshold);
+  detector_ptr = FastFeatureDetector::create(processor_config.fast_threshold);
 
-  if (!createRosIO()) return false;
+  if (!createRosIO())
+      return false;
   ROS_INFO("Finish creating ROS IO...");
 
   return true;
 }
 
+/**
+ * @brief 接收双目图像，进行双目特征跟踪，先光流跟踪上一帧的特征点，然后提取新的特征点。将跟踪到的特征点publish出去，供后端接收使用。
+ * @param cam0_img
+ * @param cam1_img
+ */
 void ImageProcessor::stereoCallback(
     const sensor_msgs::ImageConstPtr& cam0_img,
     const sensor_msgs::ImageConstPtr& cam1_img) {
 
-  //cout << "==================================" << endl;
-
   // Get the current image.
-  cam0_curr_img_ptr = cv_bridge::toCvShare(cam0_img,
-      sensor_msgs::image_encodings::MONO8);
-  cam1_curr_img_ptr = cv_bridge::toCvShare(cam1_img,
-      sensor_msgs::image_encodings::MONO8);
+  cam0_curr_img_ptr = cv_bridge::toCvShare(cam0_img,sensor_msgs::image_encodings::MONO8);
+  cam1_curr_img_ptr = cv_bridge::toCvShare(cam1_img,sensor_msgs::image_encodings::MONO8);
 
   // Build the image pyramids once since they're used at multiple places
   createImagePyramids();
@@ -292,10 +295,14 @@ void ImageProcessor::stereoCallback(
   return;
 }
 
-void ImageProcessor::imuCallback(
-    const sensor_msgs::ImuConstPtr& msg) {
+/**
+ * @brief 接收IMU数据，将IMU数据存到imu_msg_buffer中，这里并不处理数据
+ * @param msg
+ */
+void ImageProcessor::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   // Wait for the first image to be set.
-  if (is_first_img) return;
+  if (is_first_img)
+      return;
   imu_msg_buffer.push_back(*msg);
   return;
 }
@@ -420,12 +427,19 @@ void ImageProcessor::predictFeatureTracking(
   return;
 }
 
+/**
+ * @details 1) 左图特征点前后帧跟踪，得到当前帧左图特征点；
+ *             当前帧左右图跟踪，得到当前帧右图特征点；
+ *             左右图分别做前后帧RANSAC剔除外点；
+ *          2) 前后帧跟踪和左右图跟踪都是用的LK光流，
+ *             前后帧跟踪会用IMU积分的相对旋转预测特征点在当前帧的位置作为初值(integrateImuData, predictFeatureTracking)；
+ *             左右图跟踪会用相机外参预测右图特征点位置作为初值
+ *          3) 将图像分成了4*5个网格(grid)，每个网格中最多4个特征点，这样能够使特征点均匀分布在图像上
+ */
 void ImageProcessor::trackFeatures() {
   // Size of each grid.
-  static int grid_height =
-    cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-  static int grid_width =
-    cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+  static int grid_height = cam0_curr_img_ptr->image.rows / processor_config.grid_row;
+  static int grid_width  = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
   // Compute a rough relative rotation which takes a vector
   // from the previous frame to the current frame.
