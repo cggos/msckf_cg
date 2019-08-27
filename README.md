@@ -1,4 +1,4 @@
-# MSCKF\_VIO
+# msckf_vio_cg
 
 Modified version of [KumarRobotics/msckf_vio](https://github.com/KumarRobotics/msckf_vio) (commit e3a39a9 on Jul 26, 2019), a stereo version of MSCKF.
 
@@ -20,21 +20,26 @@ catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 ## Run
 
-* run with MH_01_easy.bag
+### with Dataset
+
+* run with EuRoC dataset V1_01_easy.bag
   ```sh
-  roslaunch msckf_vio msckf_vio_euroc.launch
-  rviz -d rviz_euroc_config.rviz
+  roslaunch msckf_vio msckf_vio_euroc.launch [rviz:=true]
   ```
+
+* Note
+  - First obtain either the [EuRoC](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) or the [UPenn fast flight](https://github.com/KumarRobotics/msckf_vio/wiki/Dataset) dataset.
+  - Recommended EuRoC ROS Bags: [Vicon Room 1 01](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/vicon_room1/V1_01_easy/V1_01_easy.bag)、[Vicon Room 1 02](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/vicon_room1/V1_02_easy/V1_02_easy.bag)
+  - If running with MH_01_easy.bag, it will drift quickly.
+
+### with Live Camera
 
 * run with MYNTEYE-S1030 (Stereo + IMU)
   ```sh
   roslaunch msckf_vio msckf_vio_mynteye_s1030.launch [rviz:=true]
   ```
-
-### results
-
-* with MYNTEYE-S1030
   ![](images/msckf_vio_mynteye_s1030.png)
+
 
 ## Calibration
 
@@ -43,42 +48,7 @@ An accurate calibration is crucial for successfully running the software. To get
 `camx/T_cam_imu`: takes a vector from the IMU frame to the camx frame.
 `cam1/T_cn_cnm1`: takes a vector from the cam0 frame to the cam1 frame.
 
-The filter uses the first 200 IMU messages to initialize the gyro bias, acc bias, and initial orientation. Therefore, the robot is required to start from a stationary state in order to initialize the VIO successfully.
-
-
-## EuRoC and UPenn Fast flight dataset example usage
-
-First obtain either the [EuRoC](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) or the [UPenn fast flight](https://github.com/KumarRobotics/msckf_vio/wiki/Dataset) dataset.
-
-Recommended EuRoC ROS Bags:
-- [Vicon Room 1 01](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/vicon_room1/V1_01_easy/V1_01_easy.bag)
-- [Vicon Room 1 02](http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/vicon_room1/V1_02_easy/V1_02_easy.bag)
-
-Once the `msckf_vio` is built and sourced (via `source <path to catkin_ws>/devel/setup.bash`), there are two launch files prepared for the [EuRoC](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) and [UPenn fast flight](https://github.com/KumarRobotics/msckf_vio/wiki/Dataset) dataset named `msckf_vio_euroc.launch` and `msckf_vio_fla.launch` respectively. Each launch files instantiates two ROS nodes:
-
-* `image_processor` processes stereo images to detect and track features
-* `vio` obtains feature measurements from the `image_processor` and tightly fuses them with the IMU messages to estimate pose.
-
-These launch files can be executed via
-
-```
-roslaunch msckf_vio msckf_vio_euroc.launch
-```
-or
-
-```
-roslaunch msckf_vio msckf_vio_fla.launch
-```
-
-Once the nodes are running you need to run the dataset rosbags (in a different terminal), for example:
-
-```
-rosbag play V1_01_easy.bag
-```
-
-As mentioned in the previous section, **The robot is required to start from a stationary state in order to initialize the VIO successfully.**
-
-To visualize the pose and feature estimates you can use the provided rviz configurations found in `msckf_vio/rviz` folder (EuRoC: `rviz_euroc_config.rviz`, Fast dataset: `rviz_fla_config.rviz`).
+The filter uses the first 200 IMU messages to initialize the gyro bias, acc bias, and initial orientation. Therefore, **the robot is required to start from a stationary state in order to initialize the VIO successfully**.
 
 
 ## ROS Nodes
@@ -87,46 +57,28 @@ To visualize the pose and feature estimates you can use the provided rviz config
 
 **Subscribed Topics**
 
-`imu` (`sensor_msgs/Imu`)
+* `imu` (`sensor_msgs/Imu`): IMU messages is used for compensating rotation in feature tracking, and 2-point RANSAC.
 
-IMU messages is used for compensating rotation in feature tracking, and 2-point RANSAC.
-
-`cam[x]_image` (`sensor_msgs/Image`)
-
-Synchronized stereo images.
+* `cam[x]_image` (`sensor_msgs/Image`): Synchronized stereo images.
 
 **Published Topics**
 
-`features` (`msckf_vio/CameraMeasurement`)
+* `features` (`msckf_vio/CameraMeasurement`): Records the feature measurements on the current stereo image pair.
 
-Records the feature measurements on the current stereo image pair.
+* `tracking_info` (`msckf_vio/TrackingInfo`): Records the feature tracking status for debugging purpose.
 
-`tracking_info` (`msckf_vio/TrackingInfo`)
-
-Records the feature tracking status for debugging purpose.
-
-`debug_stereo_img` (`sensor_msgs::Image`)
-
-Draw current features on the stereo images for debugging purpose. Note that this debugging image is only generated upon subscription.
+* `debug_stereo_img` (`sensor_msgs::Image`): Draw current features on the stereo images for debugging purpose. Note that this debugging image is only generated upon subscription.
 
 ### `vio` node
 
 **Subscribed Topics**
 
-`imu` (`sensor_msgs/Imu`)
+* `imu` (`sensor_msgs/Imu`): IMU measurements.
 
-IMU measurements.
-
-`features` (`msckf_vio/CameraMeasurement`)
-
-Stereo feature measurements from the `image_processor` node.
+* `features` (`msckf_vio/CameraMeasurement`): Stereo feature measurements from the `image_processor` node.
 
 **Published Topics**
 
-`odom` (`nav_msgs/Odometry`)
+* `odom` (`nav_msgs/Odometry`): Odometry of the IMU frame including a proper covariance.
 
-Odometry of the IMU frame including a proper covariance.
-
-`feature_point_cloud` (`sensor_msgs/PointCloud2`)
-
-Shows current features in the map which is used for estimation.
+* `feature_point_cloud` (`sensor_msgs/PointCloud2`): Shows current features in the map which is used for estimation.
