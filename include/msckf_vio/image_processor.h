@@ -94,33 +94,24 @@ private:
    * @brief keyPointCompareByResponse
    *    Compare two keypoints based on the response.
    */
-  static bool keyPointCompareByResponse(
-      const cv::KeyPoint& pt1,
-      const cv::KeyPoint& pt2) {
-    // Keypoint with higher response will be at the
-    // beginning of the vector.
+  static bool keyPointCompareByResponse(const cv::KeyPoint& pt1, const cv::KeyPoint& pt2) {
+    // Keypoint with higher response will be at the beginning of the vector.
     return pt1.response > pt2.response;
   }
   /*
    * @brief featureCompareByResponse
    *    Compare two features based on the response.
    */
-  static bool featureCompareByResponse(
-      const FeatureMetaData& f1,
-      const FeatureMetaData& f2) {
-    // Features with higher response will be at the
-    // beginning of the vector.
+  static bool featureCompareByResponse(const FeatureMetaData& f1, const FeatureMetaData& f2) {
+    // Features with higher response will be at the beginning of the vector.
     return f1.response > f2.response;
   }
   /*
    * @brief featureCompareByLifetime
    *    Compare two features based on the lifetime.
    */
-  static bool featureCompareByLifetime(
-      const FeatureMetaData& f1,
-      const FeatureMetaData& f2) {
-    // Features with longer lifetime will be at the
-    // beginning of the vector.
+  static bool featureCompareByLifetime(const FeatureMetaData& f1, const FeatureMetaData& f2) {
+    // Features with longer lifetime will be at the beginning of the vector.
     return f1.lifetime > f2.lifetime;
   }
 
@@ -136,9 +127,10 @@ private:
    */
   bool createRosIO();
 
-  /*
+  /**
    * @brief stereoCallback
    *    Callback function for the stereo images.
+   * @details 接收双目图像，进行双目特征跟踪，先光流跟踪上一帧的特征点，然后提取新的特征点。将跟踪到的特征点publish出去，供后端接收使用。
    * @param cam0_img left image.
    * @param cam1_img right image.
    */
@@ -146,9 +138,10 @@ private:
       const sensor_msgs::ImageConstPtr& cam0_img,
       const sensor_msgs::ImageConstPtr& cam1_img);
 
-  /*
+  /**
    * @brief imuCallback
    *    Callback function for the imu message.
+   * @details 接收IMU数据，将IMU数据存到imu_msg_buffer中，这里并不处理数据
    * @param msg IMU msg.
    */
   void imuCallback(const sensor_msgs::ImuConstPtr& msg);
@@ -161,9 +154,16 @@ private:
    */
   void initializeFirstFrame();
 
-  /*
+  /**
    * @brief trackFeatures
    *    Tracker features on the newly received stereo images.
+   * @details 1) 左图特征点前后帧跟踪，得到当前帧左图特征点；
+   *             当前帧左右图跟踪，得到当前帧右图特征点；
+   *             左右图分别做前后帧RANSAC剔除外点；
+   *          2) 前后帧跟踪和左右图跟踪都是用的LK光流，
+   *             前后帧跟踪会用IMU积分的相对旋转预测特征点在当前帧的位置作为初值(integrateImuData, predictFeatureTracking)；
+   *             左右图跟踪会用相机外参预测右图特征点位置作为初值
+   *          3) 将图像分成了4*5个网格(grid)，每个网格中最多4个特征点，这样能够使特征点均匀分布在图像上
    */
   void trackFeatures();
 
@@ -208,17 +208,18 @@ private:
    */
   void createImagePyramids();
 
-  /*
+  /**
    * @brief integrateImuData Integrates the IMU gyro readings
    *    between the two consecutive images, which is used for
    *    both tracking prediction and 2-point RANSAC.
+   * @details 用两帧图像之间的IMU数据，通过积分计算两帧图像的相对旋转矩阵cam0_R_p_c，cam1_R_p_c。
+   *          直接对角速度进行积分获得旋转矢量，然后用罗德里格斯公式转化成旋转矩阵。
    * @return cam0_R_p_c: a rotation matrix which takes a vector
    *    from previous cam0 frame to current cam0 frame.
    * @return cam1_R_p_c: a rotation matrix which takes a vector
    *    from previous cam1 frame to current cam1 frame.
    */
-  void integrateImuData(cv::Matx33f& cam0_R_p_c,
-      cv::Matx33f& cam1_R_p_c);
+  void integrateImuData(cv::Matx33f& cam0_R_p_c, cv::Matx33f& cam1_R_p_c);
 
   /*
    * @brief predictFeatureTracking Compensates the rotation
@@ -373,12 +374,9 @@ private:
   ros::NodeHandle nh;
 
   // Subscribers and publishers.
-  message_filters::Subscriber<
-    sensor_msgs::Image> cam0_img_sub;
-  message_filters::Subscriber<
-    sensor_msgs::Image> cam1_img_sub;
-  message_filters::TimeSynchronizer<
-    sensor_msgs::Image, sensor_msgs::Image> stereo_sub;
+  message_filters::Subscriber<sensor_msgs::Image> cam0_img_sub;
+  message_filters::Subscriber<sensor_msgs::Image> cam1_img_sub;
+  message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image> stereo_sub;
   ros::Subscriber imu_sub;
   ros::Publisher feature_pub;
   ros::Publisher tracking_info_pub;

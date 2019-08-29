@@ -33,26 +33,21 @@ struct IMUState {
   // Time when the state is recorded
   double time;
 
-  // Orientation
-  // Take a vector from the world frame to
-  // the IMU (body) frame.
+  // Orientation q_I_G
+  // Take a vector from the world frame to the IMU (body) frame.
   Eigen::Vector4d orientation;
 
-  // Position of the IMU (body) frame
-  // in the world frame.
+  // Position of the IMU (body) frame in the world frame.
   Eigen::Vector3d position;
 
-  // Velocity of the IMU (body) frame
-  // in the world frame.
+  // Velocity of the IMU (body) frame in the world frame.
   Eigen::Vector3d velocity;
 
-  // Bias for measured angular velocity
-  // and acceleration.
+  // Bias for measured angular velocity and acceleration.
   Eigen::Vector3d gyro_bias;
   Eigen::Vector3d acc_bias;
 
-  // Transformation between the IMU and the
-  // left camera (cam0)
+  // Transformation between the IMU and the left camera (cam0)
   Eigen::Matrix3d R_imu_cam0;
   Eigen::Vector3d t_cam0_imu;
 

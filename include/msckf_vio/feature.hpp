@@ -247,29 +247,21 @@ void Feature::generateInitialGuess(
   return;
 }
 
-bool Feature::checkMotion(
-    const CamStateServer& cam_states) const {
-
-  const StateIDType& first_cam_id = observations.begin()->first;
-  const StateIDType& last_cam_id = (--observations.end())->first;
+bool Feature::checkMotion(const CamStateServer& cam_states) const {
+  const StateIDType& first_cam_id =   observations.begin()->first;
+  const StateIDType& last_cam_id  = (--observations.end())->first;
 
   Eigen::Isometry3d first_cam_pose;
-  first_cam_pose.linear() = quaternionToRotation(
-      cam_states.find(first_cam_id)->second.orientation).transpose();
-  first_cam_pose.translation() =
-    cam_states.find(first_cam_id)->second.position;
+  first_cam_pose.linear() = quaternionToRotation(cam_states.find(first_cam_id)->second.orientation).transpose();
+  first_cam_pose.translation() = cam_states.find(first_cam_id)->second.position;
 
   Eigen::Isometry3d last_cam_pose;
-  last_cam_pose.linear() = quaternionToRotation(
-      cam_states.find(last_cam_id)->second.orientation).transpose();
-  last_cam_pose.translation() =
-    cam_states.find(last_cam_id)->second.position;
+  last_cam_pose.linear() = quaternionToRotation(cam_states.find(last_cam_id)->second.orientation).transpose();
+  last_cam_pose.translation() = cam_states.find(last_cam_id)->second.position;
 
   // Get the direction of the feature when it is first observed.
   // This direction is represented in the world frame.
-  Eigen::Vector3d feature_direction(
-      observations.begin()->second(0),
-      observations.begin()->second(1), 1.0);
+  Eigen::Vector3d feature_direction(observations.begin()->second(0), observations.begin()->second(1), 1.0);
   feature_direction = feature_direction / feature_direction.norm();
   feature_direction = first_cam_pose.linear()*feature_direction;
 
@@ -277,33 +269,28 @@ bool Feature::checkMotion(
   // and the last frame. We assume the first frame and
   // the last frame will provide the largest motion to
   // speed up the checking process.
-  Eigen::Vector3d translation = last_cam_pose.translation() -
-    first_cam_pose.translation();
-  double parallel_translation =
-    translation.transpose()*feature_direction;
-  Eigen::Vector3d orthogonal_translation = translation -
-    parallel_translation*feature_direction;
+  Eigen::Vector3d translation = last_cam_pose.translation() - first_cam_pose.translation();
+  double parallel_translation = translation.transpose()*feature_direction;
+  Eigen::Vector3d orthogonal_translation = translation - parallel_translation*feature_direction;
 
-  if (orthogonal_translation.norm() >
-      optimization_config.translation_threshold)
+  if (orthogonal_translation.norm() > optimization_config.translation_threshold)
     return true;
-  else return false;
+  else
+    return false;
 }
 
-bool Feature::initializePosition(
-    const CamStateServer& cam_states) {
+bool Feature::initializePosition(const CamStateServer& cam_states) {
   // Organize camera poses and feature observations properly.
-  std::vector<Eigen::Isometry3d,
-    Eigen::aligned_allocator<Eigen::Isometry3d> > cam_poses(0);
-  std::vector<Eigen::Vector2d,
-    Eigen::aligned_allocator<Eigen::Vector2d> > measurements(0);
+  std::vector<Eigen::Isometry3d,Eigen::aligned_allocator<Eigen::Isometry3d> > cam_poses(0);
+  std::vector<Eigen::Vector2d,  Eigen::aligned_allocator<Eigen::Vector2d> > measurements(0);
 
   for (auto& m : observations) {
     // TODO: This should be handled properly. Normally, the
     //    required camera states should all be available in
     //    the input cam_states buffer.
     auto cam_state_iter = cam_states.find(m.first);
-    if (cam_state_iter == cam_states.end()) continue;
+    if (cam_state_iter == cam_states.end())
+        continue;
 
     // Add the measurement.
     measurements.push_back(m.second.head<2>());
@@ -312,8 +299,7 @@ bool Feature::initializePosition(
     // This camera pose will take a vector from this camera frame
     // to the world frame.
     Eigen::Isometry3d cam0_pose;
-    cam0_pose.linear() = quaternionToRotation(
-        cam_state_iter->second.orientation).transpose();
+    cam0_pose.linear() = quaternionToRotation(cam_state_iter->second.orientation).transpose();
     cam0_pose.translation() = cam_state_iter->second.position;
 
     Eigen::Isometry3d cam1_pose;
@@ -324,16 +310,14 @@ bool Feature::initializePosition(
   }
 
   // All camera poses should be modified such that it takes a
-  // vector from the first camera frame in the buffer to this
-  // camera frame.
+  // vector from the first camera frame in the buffer to this camera frame.
   Eigen::Isometry3d T_c0_w = cam_poses[0];
   for (auto& pose : cam_poses)
     pose = pose.inverse() * T_c0_w;
 
   // Generate initial guess
   Eigen::Vector3d initial_position(0.0, 0.0, 0.0);
-  generateInitialGuess(cam_poses[cam_poses.size()-1], measurements[0],
-      measurements[measurements.size()-1], initial_position);
+  generateInitialGuess(cam_poses[cam_poses.size()-1], measurements[0], measurements[measurements.size()-1], initial_position);
   Eigen::Vector3d solution(
       initial_position(0)/initial_position(2),
       initial_position(1)/initial_position(2),
@@ -410,17 +394,13 @@ bool Feature::initializePosition(
       optimization_config.outer_loop_max_iteration &&
       delta_norm > optimization_config.estimation_precision);
 
-  // Covert the feature position from inverse depth
-  // representation to its 3d coordinate.
-  Eigen::Vector3d final_position(solution(0)/solution(2),
-      solution(1)/solution(2), 1.0/solution(2));
+  // Covert the feature position from inverse depth representation to its 3d coordinate.
+  Eigen::Vector3d final_position(solution(0)/solution(2), solution(1)/solution(2), 1.0/solution(2));
 
-  // Check if the solution is valid. Make sure the feature
-  // is in front of every camera frame observing it.
+  // Check if the solution is valid. Make sure the feature is in front of every camera frame observing it.
   bool is_valid_solution = true;
   for (const auto& pose : cam_poses) {
-    Eigen::Vector3d position =
-      pose.linear()*final_position + pose.translation();
+    Eigen::Vector3d position = pose.linear()*final_position + pose.translation();
     if (position(2) <= 0) {
       is_valid_solution = false;
       break;

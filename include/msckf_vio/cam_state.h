@@ -16,8 +16,7 @@
 
 namespace msckf_vio {
 /*
- * @brief CAMState Stored camera state in order to
- *    form measurement model.
+ * @brief CAMState Stored camera state in order to form measurement model.
  */
 struct CAMState {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -28,18 +27,14 @@ struct CAMState {
   // Time when the state is recorded
   double time;
 
-  // Orientation
-  // Take a vector from the world frame to the camera frame.
+  // Orientation Take a vector from the world frame to the camera frame.
   Eigen::Vector4d orientation;
 
   // Position of the camera frame in the world frame.
   Eigen::Vector3d position;
 
-  // These two variables should have the same physical
-  // interpretation with `orientation` and `position`.
-  // There two variables are used to modify the measurement
-  // Jacobian matrices to make the observability matrix
-  // have proper null space.
+  // These two variables should have the same physical interpretation with `orientation` and `position`.
+  // There two variables are used to modify the measurement Jacobian matrices to make the observability matrix have proper null space.
   Eigen::Vector4d orientation_null;
   Eigen::Vector3d position_null;
 
@@ -60,8 +55,7 @@ struct CAMState {
 };
 
 typedef std::map<StateIDType, CAMState, std::less<int>,
-        Eigen::aligned_allocator<
-        std::pair<const StateIDType, CAMState> > > CamStateServer;
+        Eigen::aligned_allocator<std::pair<const StateIDType, CAMState> > > CamStateServer;
 } // namespace msckf_vio
 
 #endif // MSCKF_VIO_CAM_STATE_H
