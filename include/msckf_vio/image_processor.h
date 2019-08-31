@@ -48,8 +48,7 @@ public:
 private:
 
   /*
-   * @brief ProcessorConfig Configuration parameters for
-   *    feature detection and tracking.
+   * @brief ProcessorConfig Configuration parameters for feature detection and tracking.
    */
   struct ProcessorConfig {
     int grid_row;
@@ -72,8 +71,7 @@ private:
   typedef unsigned long long int FeatureIDType;
 
   /*
-   * @brief FeatureMetaData Contains necessary information
-   *    of a feature for easy access.
+   * @brief FeatureMetaData Contains necessary information of a feature for easy access.
    */
   struct FeatureMetaData {
     FeatureIDType id;
@@ -84,9 +82,8 @@ private:
   };
 
   /*
-   * @brief GridFeatures Organize features based on the grid
-   *    they belong to. Note that the key is encoded by the
-   *    grid index.
+   * @brief GridFeatures
+   *    Organize features based on the grid they belong to. Note that the key is encoded by the grid index.
    */
   typedef std::map<int, std::vector<FeatureMetaData> > GridFeatures;
 
@@ -241,12 +238,10 @@ private:
       std::vector<cv::Point2f>& compenstated_pts);
 
   /*
-   * @brief twoPointRansac Applies two point ransac algorithm
-   *    to mark the inliers in the input set.
+   * @brief twoPointRansac Applies two point ransac algorithm to mark the inliers in the input set.
    * @param pts1: first set of points.
    * @param pts2: second set of points.
-   * @param R_p_c: a rotation matrix takes a vector in the previous
-   *    camera frame to the current camera frame.
+   * @param R_p_c: a rotation matrix takes a vector in the previous camera frame to the current camera frame.
    * @param intrinsics: intrinsics of the camera.
    * @param distortion_model: distortion model of the camera.
    * @param distortion_coeffs: distortion coefficients.

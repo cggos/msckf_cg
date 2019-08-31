@@ -110,6 +110,7 @@ bool ImageProcessor::loadParameters() {
   nh.param<double>("stereo_threshold", processor_config.stereo_threshold, 3);
 
   ROS_INFO("ImageProcessor begin ===========================================");
+
   ROS_INFO("cam0_resolution: %d, %d", cam0_resolution[0], cam0_resolution[1]);
   ROS_INFO("cam0_intrinscs: %f, %f, %f, %f",
           cam0_intrinsics[0], cam0_intrinsics[1], cam0_intrinsics[2], cam0_intrinsics[3]);
@@ -145,6 +146,7 @@ bool ImageProcessor::loadParameters() {
   std::cout << "t_cam1_imu:\n" << t_cam1_imu << std::endl;
 
   ROS_INFO("ImageProcessor end ===========================================");
+
   return true;
 }
 
@@ -292,7 +294,8 @@ void ImageProcessor::initializeFirstFrame() {
   vector<cv::Point2f> cam1_inliers(0);
   vector<float> response_inliers(0);
   for (int i = 0; i < inlier_markers.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
+    if (inlier_markers[i] == 0)
+        continue;
     cam0_inliers.push_back(cam0_points[i]);
     cam1_inliers.push_back(cam1_points[i]);
     response_inliers.push_back(new_features[i].response);
@@ -421,7 +424,8 @@ void ImageProcessor::trackFeatures() {
 
   // Mark those tracked points out of the image region as untracked.
   for (int i = 0; i < curr_cam0_points.size(); ++i) {
-    if (track_inliers[i] == 0) continue;
+    if (track_inliers[i] == 0)
+        continue;
     if (curr_cam0_points[i].y < 0 || curr_cam0_points[i].y > cam0_curr_img_ptr->image.rows-1 ||
         curr_cam0_points[i].x < 0 || curr_cam0_points[i].x > cam0_curr_img_ptr->image.cols-1)
       track_inliers[i] = 0;
@@ -501,7 +505,8 @@ void ImageProcessor::trackFeatures() {
   after_ransac = 0;
 
   for (int i = 0; i < cam0_ransac_inliers.size(); ++i) {
-    if (cam0_ransac_inliers[i] == 0 || cam1_ransac_inliers[i] == 0) continue;
+    if (cam0_ransac_inliers[i] == 0 || cam1_ransac_inliers[i] == 0)
+        continue;
     int row = static_cast<int>(curr_matched_cam0_points[i].y / grid_height);
     int col = static_cast<int>(curr_matched_cam0_points[i].x / grid_width);
     int code = row*processor_config.grid_col + col;
@@ -509,7 +514,7 @@ void ImageProcessor::trackFeatures() {
 
     FeatureMetaData& grid_new_feature = (*curr_features_ptr)[code].back();
     grid_new_feature.id = prev_matched_ids[i];
-    grid_new_feature.lifetime = ++prev_matched_lifetime[i];
+    grid_new_feature.lifetime   = ++prev_matched_lifetime[i];
     grid_new_feature.cam0_point = curr_matched_cam0_points[i];
     grid_new_feature.cam1_point = curr_matched_cam1_points[i];
 
@@ -569,7 +574,8 @@ void ImageProcessor::stereoMatch(
 
   // Mark those tracked points out of the image region as untracked.
   for (int i = 0; i < cam1_points.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
+    if (inlier_markers[i] == 0)
+        continue;
     if (cam1_points[i].y < 0 || cam1_points[i].y > cam1_curr_img_ptr->image.rows-1 ||
         cam1_points[i].x < 0 || cam1_points[i].x > cam1_curr_img_ptr->image.cols-1)
       inlier_markers[i] = 0;
@@ -594,7 +600,8 @@ void ImageProcessor::stereoMatch(
   double norm_pixel_unit = 4.0 / (cam0_intrinsics[0]+cam0_intrinsics[1]+cam1_intrinsics[0]+cam1_intrinsics[1]);
 
   for (int i = 0; i < cam0_points_undistorted.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
+    if (inlier_markers[i] == 0)
+        continue;
     cv::Vec3d pt0(cam0_points_undistorted[i].x, cam0_points_undistorted[i].y, 1.0);
     cv::Vec3d pt1(cam1_points_undistorted[i].x, cam1_points_undistorted[i].y, 1.0);
     cv::Vec3d epipolar_line = E * pt0;
@@ -622,10 +629,14 @@ void ImageProcessor::addNewFeatures() {
       const int x = static_cast<int>(feature.cam0_point.x);
 
       int up_lim = y-2, bottom_lim = y+3, left_lim = x-2, right_lim = x+3;
-      if (up_lim < 0) up_lim = 0;
-      if (bottom_lim > curr_img.rows) bottom_lim = curr_img.rows;
-      if (left_lim < 0) left_lim = 0;
-      if (right_lim > curr_img.cols) right_lim = curr_img.cols;
+      if (up_lim < 0)
+          up_lim = 0;
+      if (bottom_lim > curr_img.rows)
+          bottom_lim = curr_img.rows;
+      if (left_lim < 0)
+          left_lim = 0;
+      if (right_lim > curr_img.cols)
+          right_lim = curr_img.cols;
 
       Range row_range(up_lim, bottom_lim);
       Range col_range(left_lim, right_lim);
@@ -657,8 +668,7 @@ void ImageProcessor::addNewFeatures() {
 
   int detected_new_features = new_features.size();
 
-  // Find the stereo matched points for the newly
-  // detected features.
+  // Find the stereo matched points for the newly detected features.
   vector<cv::Point2f> cam0_points(new_features.size());
   for (int i = 0; i < new_features.size(); ++i)
     cam0_points[i] = new_features[i].pt;
@@ -671,7 +681,8 @@ void ImageProcessor::addNewFeatures() {
   vector<cv::Point2f> cam1_inliers(0);
   vector<float> response_inliers(0);
   for (int i = 0; i < inlier_markers.size(); ++i) {
-    if (inlier_markers[i] == 0) continue;
+    if (inlier_markers[i] == 0)
+        continue;
     cam0_inliers.push_back(cam0_points[i]);
     cam1_inliers.push_back(cam1_points[i]);
     response_inliers.push_back(new_features[i].response);
@@ -714,7 +725,8 @@ void ImageProcessor::addNewFeatures() {
     vector<FeatureMetaData>& features_this_grid = (*curr_features_ptr)[code];
     vector<FeatureMetaData>& new_features_this_grid = grid_new_features[code];
 
-    if (features_this_grid.size() >= processor_config.grid_min_feature_num) continue;
+    if (features_this_grid.size() >= processor_config.grid_min_feature_num)
+        continue;
 
     int vacancy_num = processor_config.grid_min_feature_num - features_this_grid.size();
     for (int k = 0; k < vacancy_num && k < new_features_this_grid.size(); ++k) {
@@ -734,8 +746,7 @@ void ImageProcessor::addNewFeatures() {
 void ImageProcessor::pruneGridFeatures() {
   for (auto& item : *curr_features_ptr) {
     auto& grid_features = item.second;
-    // Continue if the number of features in this grid does
-    // not exceed the upper bound.
+    // Continue if the number of features in this grid does not exceed the upper bound.
     if (grid_features.size() <= processor_config.grid_max_feature_num)
         continue;
     std::sort(grid_features.begin(), grid_features.end(), &ImageProcessor::featureCompareByLifetime);
@@ -892,8 +903,7 @@ void ImageProcessor::twoPointRansac(
   undistortPoints(pts1, intrinsics, distortion_model, distortion_coeffs, pts1_undistorted);
   undistortPoints(pts2, intrinsics, distortion_model, distortion_coeffs, pts2_undistorted);
 
-  // Compenstate the points in the previous image with
-  // the relative rotation.
+  // Compenstate the points in the previous image with the relative rotation.
   for (auto& pt : pts1_undistorted) {
     Vec3f pt_h(pt.x, pt.y, 1.0f);
     //Vec3f pt_hc = dR * pt_h;
@@ -907,22 +917,19 @@ void ImageProcessor::twoPointRansac(
   rescalePoints(pts1_undistorted, pts2_undistorted, scaling_factor);
   norm_pixel_unit *= scaling_factor;
 
-  // Compute the difference between previous and current points,
-  // which will be used frequently later.
+  // Compute the difference between previous and current points, which will be used frequently later.
   vector<Point2d> pts_diff(pts1_undistorted.size());
   for (int i = 0; i < pts1_undistorted.size(); ++i)
     pts_diff[i] = pts1_undistorted[i] - pts2_undistorted[i];
 
   // Mark the point pairs with large difference directly.
-  // BTW, the mean distance of the rest of the point pairs
-  // are computed.
+  // BTW, the mean distance of the rest of the point pairs are computed.
   double mean_pt_distance = 0.0;
   int raw_inlier_cntr = 0;
   for (int i = 0; i < pts_diff.size(); ++i) {
     double distance = sqrt(pts_diff[i].dot(pts_diff[i]));
     // 25 pixel distance is a pretty large tolerance for normal motion.
-    // However, to be used with aggressive motion, this tolerance should
-    // be increased significantly to match the usage.
+    // However, to be used with aggressive motion, this tolerance should be increased significantly to match the usage.
     if (distance > 50.0*norm_pixel_unit) {
       inlier_markers[i] = 0;
     } else {
@@ -932,9 +939,8 @@ void ImageProcessor::twoPointRansac(
   }
   mean_pt_distance /= raw_inlier_cntr;
 
-  // If the current number of inliers is less than 3, just mark
-  // all input as outliers. This case can happen with fast
-  // rotation where very few features are tracked.
+  // If the current number of inliers is less than 3, just mark all input as outliers.
+  // This case can happen with fast rotation where very few features are tracked.
   if (raw_inlier_cntr < 3) {
     for (auto& marker : inlier_markers)
         marker = 0;
@@ -961,9 +967,9 @@ void ImageProcessor::twoPointRansac(
   // The three column corresponds to tx, ty, and tz respectively.
   MatrixXd coeff_t(pts_diff.size(), 3);
   for (int i = 0; i < pts_diff.size(); ++i) {
-    coeff_t(i, 0) = pts_diff[i].y;
+    coeff_t(i, 0) =  pts_diff[i].y;
     coeff_t(i, 1) = -pts_diff[i].x;
-    coeff_t(i, 2) = pts1_undistorted[i].x*pts2_undistorted[i].y - pts1_undistorted[i].y*pts2_undistorted[i].x;
+    coeff_t(i, 2) =  pts1_undistorted[i].x*pts2_undistorted[i].y - pts1_undistorted[i].y*pts2_undistorted[i].x;
   }
 
   vector<int> raw_inlier_idx;
@@ -980,7 +986,7 @@ void ImageProcessor::twoPointRansac(
     // Randomly select two point pairs.
     // Although this is a weird way of selecting two pairs, but it
     // is able to efficiently avoid selecting repetitive pairs.
-    int select_idx1 = random_gen.uniformInteger(0, raw_inlier_idx.size()-1);
+    int select_idx1     = random_gen.uniformInteger(0, raw_inlier_idx.size()-1);
     int select_idx_diff = random_gen.uniformInteger(1, raw_inlier_idx.size()-1);
     int select_idx2 =
             select_idx1+select_idx_diff<raw_inlier_idx.size() ?
@@ -1035,8 +1041,7 @@ void ImageProcessor::twoPointRansac(
         inlier_set.push_back(i);
     }
 
-    // If the number of inliers is small, the current
-    // model is probably wrong.
+    // If the number of inliers is small, the current model is probably wrong.
     if (inlier_set.size() < 0.2*pts1_undistorted.size())
       continue;
 
@@ -1094,14 +1099,12 @@ void ImageProcessor::twoPointRansac(
   for (const auto& inlier_idx : best_inlier_set)
     inlier_markers[inlier_idx] = 1;
 
-  //printf("inlier ratio: %lu/%lu\n",
-  //    best_inlier_set.size(), inlier_markers.size());
+  //printf("inlier ratio: %lu/%lu\n", best_inlier_set.size(), inlier_markers.size());
 
   return;
 }
 
 void ImageProcessor::publish() {
-
   // Publish features.
   CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
   feature_msg_ptr->header.stamp = cam0_curr_img_ptr->header.stamp;

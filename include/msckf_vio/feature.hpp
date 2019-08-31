@@ -161,20 +161,17 @@ struct Feature {
 
 typedef Feature::FeatureIDType FeatureIDType;
 typedef std::map<FeatureIDType, Feature, std::less<int>,
-        Eigen::aligned_allocator<
-        std::pair<const FeatureIDType, Feature> > > MapServer;
+        Eigen::aligned_allocator<std::pair<const FeatureIDType, Feature> > > MapServer;
 
 
 void Feature::cost(const Eigen::Isometry3d& T_c0_ci,
-    const Eigen::Vector3d& x, const Eigen::Vector2d& z,
-    double& e) const {
+    const Eigen::Vector3d& x, const Eigen::Vector2d& z, double& e) const {
   // Compute hi1, hi2, and hi3 as Equation (37).
   const double& alpha = x(0);
   const double& beta = x(1);
   const double& rho = x(2);
 
-  Eigen::Vector3d h = T_c0_ci.linear()*
-    Eigen::Vector3d(alpha, beta, 1.0) + rho*T_c0_ci.translation();
+  Eigen::Vector3d h = T_c0_ci.linear() * Eigen::Vector3d(alpha, beta, 1.0) + rho*T_c0_ci.translation();
   double& h1 = h(0);
   double& h2 = h(1);
   double& h3 = h(2);
@@ -197,8 +194,7 @@ void Feature::jacobian(const Eigen::Isometry3d& T_c0_ci,
   const double& beta = x(1);
   const double& rho = x(2);
 
-  Eigen::Vector3d h = T_c0_ci.linear()*
-    Eigen::Vector3d(alpha, beta, 1.0) + rho*T_c0_ci.translation();
+  Eigen::Vector3d h = T_c0_ci.linear() * Eigen::Vector3d(alpha, beta, 1.0) + rho*T_c0_ci.translation();
   double& h1 = h(0);
   double& h2 = h(1);
   double& h3 = h(2);
@@ -226,8 +222,8 @@ void Feature::jacobian(const Eigen::Isometry3d& T_c0_ci,
 }
 
 void Feature::generateInitialGuess(
-    const Eigen::Isometry3d& T_c1_c2, const Eigen::Vector2d& z1,
-    const Eigen::Vector2d& z2, Eigen::Vector3d& p) const {
+    const Eigen::Isometry3d& T_c1_c2,
+    const Eigen::Vector2d& z1, const Eigen::Vector2d& z2, Eigen::Vector3d& p) const {
   // Construct a least square problem to solve the depth.
   Eigen::Vector3d m = T_c1_c2.linear() * Eigen::Vector3d(z1(0), z1(1), 1.0);
 
@@ -265,10 +261,8 @@ bool Feature::checkMotion(const CamStateServer& cam_states) const {
   feature_direction = feature_direction / feature_direction.norm();
   feature_direction = first_cam_pose.linear()*feature_direction;
 
-  // Compute the translation between the first frame
-  // and the last frame. We assume the first frame and
-  // the last frame will provide the largest motion to
-  // speed up the checking process.
+  // Compute the translation between the first frame and the last frame.
+  // We assume the first frame and the last frame will provide the largest motion to speed up the checking process.
   Eigen::Vector3d translation = last_cam_pose.translation() - first_cam_pose.translation();
   double parallel_translation = translation.transpose()*feature_direction;
   Eigen::Vector3d orthogonal_translation = translation - parallel_translation*feature_direction;
@@ -285,9 +279,8 @@ bool Feature::initializePosition(const CamStateServer& cam_states) {
   std::vector<Eigen::Vector2d,  Eigen::aligned_allocator<Eigen::Vector2d> > measurements(0);
 
   for (auto& m : observations) {
-    // TODO: This should be handled properly. Normally, the
-    //    required camera states should all be available in
-    //    the input cam_states buffer.
+    // TODO: This should be handled properly.
+    //  Normally, the required camera states should all be available in the input cam_states buffer.
     auto cam_state_iter = cam_states.find(m.first);
     if (cam_state_iter == cam_states.end())
         continue;
@@ -296,8 +289,7 @@ bool Feature::initializePosition(const CamStateServer& cam_states) {
     measurements.push_back(m.second.head<2>());
     measurements.push_back(m.second.tail<2>());
 
-    // This camera pose will take a vector from this camera frame
-    // to the world frame.
+    // This camera pose will take a vector from this camera frame to the world frame.
     Eigen::Isometry3d cam0_pose;
     cam0_pose.linear() = quaternionToRotation(cam_state_iter->second.orientation).transpose();
     cam0_pose.translation() = cam_state_iter->second.position;

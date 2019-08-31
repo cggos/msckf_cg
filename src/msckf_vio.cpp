@@ -81,16 +81,15 @@ bool MsckfVio::loadParameters() {
   nh.param<double>("noise/feature", Feature::observation_noise, 0.01);
 
   // Use variance instead of standard deviation.
-  IMUState::gyro_noise *= IMUState::gyro_noise;
-  IMUState::acc_noise *= IMUState::acc_noise;
-  IMUState::gyro_bias_noise *= IMUState::gyro_bias_noise;
-  IMUState::acc_bias_noise *= IMUState::acc_bias_noise;
+  IMUState::gyro_noise       *= IMUState::gyro_noise;
+  IMUState::acc_noise        *= IMUState::acc_noise;
+  IMUState::gyro_bias_noise  *= IMUState::gyro_bias_noise;
+  IMUState::acc_bias_noise   *= IMUState::acc_bias_noise;
   Feature::observation_noise *= Feature::observation_noise;
 
   // Set the initial IMU state.
   // The intial orientation and position will be set to the origin
-  // implicitly. But the initial velocity and bias can be
-  // set by parameters.
+  // implicitly. But the initial velocity and bias can be set by parameters.
   // TODO: is it reasonable to set the initial bias to 0?
   nh.param<double>("initial_state/velocity/x", state_server.imu_state.velocity(0), 0.0);
   nh.param<double>("initial_state/velocity/y", state_server.imu_state.velocity(1), 0.0);
@@ -512,6 +511,7 @@ void MsckfVio::processModel(const double& time, const Vector3d& m_gyro, const Ve
   // Propogate the state using 4th order Runge-Kutta
   predictNewState(dtime, gyro, acc);
 
+  // TODO: why
   // Modify the transition matrix
   Matrix3d R_kk_1 = quaternionToRotation(imu_state.orientation_null);
   Phi.block<3, 3>(0, 0) = quaternionToRotation(imu_state.orientation) * R_kk_1.transpose();
@@ -1027,9 +1027,7 @@ void MsckfVio::findRedundantCamStates(vector<StateIDType>& rm_cam_state_ids) {
     double distance = (position-key_position).norm();
     double angle = AngleAxisd(rotation*key_rotation.transpose()).angle();
 
-    if (angle < rotation_threshold &&
-        distance < translation_threshold &&
-        tracking_rate > tracking_rate_threshold) {
+    if (angle < rotation_threshold && distance < translation_threshold && tracking_rate > tracking_rate_threshold) {
       rm_cam_state_ids.push_back(cam_state_iter->first);
       ++cam_state_iter;
     } else {
@@ -1056,15 +1054,15 @@ void MsckfVio::pruneCamStateBuffer() {
   int jacobian_row_size = 0;
   for (auto& item : map_server) {
     auto& feature = item.second;
-    // Check how many camera states to be removed are associated
-    // with this feature.
+    // Check how many camera states to be removed are associated with this feature.
     vector<StateIDType> involved_cam_state_ids(0);
     for (const auto& cam_id : rm_cam_state_ids) {
       if (feature.observations.find(cam_id) != feature.observations.end())
         involved_cam_state_ids.push_back(cam_id);
     }
 
-    if (involved_cam_state_ids.size() == 0) continue;
+    if (involved_cam_state_ids.size() == 0)
+        continue;
     if (involved_cam_state_ids.size() == 1) {
       feature.observations.erase(involved_cam_state_ids[0]);
       continue;
@@ -1074,8 +1072,7 @@ void MsckfVio::pruneCamStateBuffer() {
       // Check if the feature can be initialize.
       if (!feature.checkMotion(state_server.cam_states)) {
         // If the feature cannot be initialized, just remove
-        // the observations associated with the camera states
-        // to be removed.
+        // the observations associated with the camera states to be removed.
         for (const auto& cam_id : involved_cam_state_ids)
           feature.observations.erase(cam_id);
         continue;
@@ -1107,7 +1104,8 @@ void MsckfVio::pruneCamStateBuffer() {
         involved_cam_state_ids.push_back(cam_id);
     }
 
-    if (involved_cam_state_ids.size() == 0) continue;
+    if (involved_cam_state_ids.size() == 0)
+        continue;
 
     MatrixXd H_xj;
     VectorXd r_j;
