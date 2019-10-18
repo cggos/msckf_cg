@@ -173,8 +173,7 @@ namespace msckf_mono {
 
         init_imu_state_.b_g = gyro_mean;
         init_imu_state_.g << 0.0, 0.0, -9.81;
-        init_imu_state_.q_IG = Quaternion<float>::FromTwoVectors(
-                -init_imu_state_.g, accel_mean);
+        init_imu_state_.q_IG = Quaternion<float>::FromTwoVectors(-init_imu_state_.g, accel_mean);
 
         init_imu_state_.b_a = init_imu_state_.q_IG * init_imu_state_.g + accel_mean;
 
@@ -184,7 +183,7 @@ namespace msckf_mono {
 
         ROS_INFO_STREAM("\nInitial IMU State" <<
                         "\n--p_I_G " << init_imu_state_.p_I_G.transpose() <<
-                        "\n--q_IG " << q.w() << "," << q.x() << "," << q.y() << "," << q.x() <<
+                        "\n--q_IG " << q.w() << "," << q.x() << "," << q.y() << "," << q.z() <<
                         "\n--v_I_G " << init_imu_state_.v_I_G.transpose() <<
                         "\n--b_a " << init_imu_state_.b_a.transpose() <<
                         "\n--b_g " << init_imu_state_.b_g.transpose() <<
