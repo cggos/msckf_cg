@@ -1399,7 +1399,7 @@ namespace msckf_mono {
 
             imuStateProp.q_IG = q;
             Vector3<_S> delta_v_I_G =
-                    (((imu_state_k.q_IG.toRotationMatrix()).transpose()) * (measurement_k.a - imu_state_k.b_a) + imu_state_k.g) * dT;
+                    (imu_state_k.q_IG.toRotationMatrix().transpose() * (measurement_k.a - imu_state_k.b_a) + imu_state_k.g) * dT;
 
             imuStateProp.v_I_G += delta_v_I_G;
 
