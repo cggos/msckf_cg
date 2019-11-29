@@ -68,12 +68,22 @@ S-MSCKF~\cite{sun2018robust}是宾夕法尼亚大学Vijay Kumar实验室开源�
 \newpage
 \section{MsckfVio Estimator/Filter}
 
-\subsection{Kalman Filter Overview}
+\subsection{Overview}
+
+\subsubsection{Kalman Filter}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[scale=0.7]{images/kf_flow.jpg}
 \caption{Kalman Filter流程图}
+\end{figure}
+
+\subsubsection{Multi-State Constraint Filter}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[scale=0.6]{images/msckf_algr.png}
+\caption{Multi-State Constraint Filter 流程图}
 \end{figure}
 
 \subsection{代码流程}
@@ -83,7 +93,18 @@ S-MSCKF~\cite{sun2018robust}是宾夕法尼亚大学Vijay Kumar实验室开源�
 \begin{itemize}
 \item Load Parameters
 \item Initialize state server: \verb|state_server.continuous_noise_cov|
-\item Initialize the chi squared test table with confidence level 0.95: \verb|chi_squared_test_table|
+\item Initialize the \textbf{chi squared test table} with confidence level \textbf{P=0.95} for \verb|MsckfVio::gatingTest()|
+\begin{lstlisting}
+for (int i = 1; i < 100; ++i) {
+    boost::math::chi_squared chi_squared_dist(i);
+    chi_squared_test_table[i] = boost::math::quantile(chi_squared_dist, 0.05);
+}
+\end{lstlisting}
+\begin{figure}[!htbp]
+\centering
+\includegraphics[scale=0.6]{images/chi_square_table.png}
+\caption{chi-square table}
+\end{figure}
 \end{itemize}
 
 \subsubsection{ImuCallback}
@@ -96,16 +117,17 @@ S-MSCKF~\cite{sun2018robust}是宾夕法尼亚大学Vijay Kumar实验室开源�
 
 \begin{itemize}
 \item 将前200帧加速度和角速度求平均
-\item 平均加速度的模值g作为重力加速度：\verb|IMUState::gravity|
 \item 平均角速度作为陀螺仪的bias： \verb|state_server.imu_state.gyro_bias|
-\item 计算重力向量(0,0,-g)和平均加速度之间的夹角(旋转四元数), 标定初始时刻IMU系与world系之间的夹角：\verb|state_server.imu_state.orientation|
+\item 平均加速度作为IMU系下的重力加速度：\verb|gravity_imu|
+\item 平均加速度的模值作为重力加速度模长g：\verb|IMUState::gravity|
+\item 计算初始时刻World系（水平天向）重力向量(0,0,-g)和IMU系重力向量\verb|gravity_imu|之间的姿态(旋转四元数)：\verb|state_server.imu_state.orientation|
 \end{itemize}
 
 \end{itemize}
 
 \subsubsection{FeatureCallback}
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
 \centering
 \includegraphics[scale=0.7]{images/feature_cb.png}
 \caption{FeatureCallback流程图}
@@ -159,7 +181,14 @@ IMU噪声向量
 其对应的噪声协方差矩阵
 
 \begin{equation*}
-\mathbf{Q}_I = \mathbb{E}\left[\mathbf{n}_I^{}\mathbf{n}_I^\top\right]
+\mathbf{Q}_I 
+= \mathbb{E}\left[\mathbf{n}_I^{}\mathbf{n}_I^\top\right]
+= \text{diag}\left( 
+\sigma_{g}^2  \mathbf{I}_{3\times3 } \quad
+\sigma_{bg}^2 \mathbf{I}_{3\times3 } \quad
+\sigma_{a}^2  \mathbf{I}_{3\times3 } \quad
+\sigma_{ba}^2 \mathbf{I}_{3\times3 } 
+\right)
 \in \mathbb{R}^{12 \times 12}
 \end{equation*}
 
@@ -219,7 +248,7 @@ IMU运动微分方程（nominal-state状态方程）
 \end{aligned}
 \end{equation*}
 
-并且
+并且（使用JPL四元数）
 
 \begin{equation*}
 \Omega\left(\hat{\boldsymbol{\omega}}\right) 
@@ -279,7 +308,9 @@ $$
 
 $$
 \mathbf{n}_I^\top = 
-\left(\mathbf{n}_g^\top \; \mathbf{n}_{wg}^\top \; \mathbf{n}_a^\top \; \mathbf{n}_{wa}^\top\right)^\top
+\left(
+\mathbf{n}_g^\top \; \mathbf{n}_{wg}^\top \; \mathbf{n}_a^\top \; \mathbf{n}_{wa}^\top
+\right)^\top
 \in \mathbb{R}^{12 \times 1}
 $$
 
@@ -325,12 +356,14 @@ $\mathbf{F}$和$\mathbf{G}$为（代码在 \verb|MsckfVio::processModel|，文�
 代码在 \verb|MsckfVio::predictNewState|。
 
 \begin{itemize}
-\item 姿态预测（0阶四元数积分，根据\cite{trawny2005indirect}中122式）
+\item 姿态预测（\cite{trawny2005indirect}中122式 0阶四元数积分，代码据 $|\omega|$ 是否接近0 分两种情况，{\color{red}{接近0 ??}}）
 
 \begin{equation}
 {}^I_G \mathbf{q}(t_{k+1}) =
 \left(
-\cos \left(\frac{|\omega|}{2} \Delta t\right) \cdot \mathbf{I}_{4 \times 4}+\frac{1}{|\omega|} \sin \left(\frac{|\omega|}{2} \Delta t\right) \cdot \mathbf{\Omega}(\omega)
+\cos \left(\frac{|\omega|}{2} \Delta t\right) \cdot \mathbf{I}_{4 \times 4} +
+\frac{1}{|\omega|} \sin \left(\frac{|\omega|}{2} \Delta t\right) \cdot 
+\boldsymbol{\Omega}(\omega)
 \right)
 {}^I_G \mathbf{q}(t_k) 
 \end{equation}
@@ -345,7 +378,7 @@ y_{n+1} = y_n + \frac{\Delta t}{6} (k_1 + 2k_2 + 2k_3 + k_4)
 
 \subsubsection{系统状态协方差预测}
 
-代码在 \verb|MsckfVio::processModel|。
+代码在 \verb|MsckfVio::processModel|，处理两帧图像间的每一帧IMU数据。
 
 离散时间状态转移矩阵
 
@@ -358,9 +391,11 @@ y_{n+1} = y_n + \frac{\Delta t}{6} (k_1 + 2k_2 + 2k_3 + k_4)
 &\approx 
 \mathbf{I} + \mathbf{F} \Delta t + 
 \frac{1}{2} (\mathbf{F} \Delta t)^2 + \frac{1}{6} (\mathbf{F} \Delta t)^3
-\quad (\Delta t \text{比较小时})
+\quad (\Delta t \text{比较小时，一般 <0.01s})
 \end{aligned}
 \end{equation}
+
+{\color{red}why: Modify the transition matrix to make the observability matrix have proper null space}
 
 离散时间噪声协方差矩阵
 
@@ -376,30 +411,39 @@ y_{n+1} = y_n + \frac{\Delta t}{6} (k_1 + 2k_2 + 2k_3 + k_4)
 
 IMU状态传播协方差矩阵为
 
-\begin{equation*}
+\begin{equation}
 \mathbf{P}_{II_{k+1|k}} = 
 \boldsymbol{\Phi}_k\mathbf{P}_{II_{k|k}}\boldsymbol{\Phi}_k^\top + \mathbf{Q}_k
-\end{equation*}
+\end{equation}
 
 系统状态传播协方差矩阵拆解表示为
 
-\begin{equation*}
+\begin{equation}
 \mathbf{P}_{k|k} = 
 \begin{pmatrix}
 \mathbf{P}_{II_{k|k}} & \mathbf{P}_{IC_{k|k}} \\
 \mathbf{P}_{IC_{k|k}}^\top & \mathbf{P}_{CC_{k|k}}
 \end{pmatrix}
-\end{equation*}
+\end{equation}
 
 其传播形式表示为
 
-\begin{equation*}
+\begin{equation}
+{\color{blue}
 \mathbf{P}_{k+1|k} = 
 \begin{pmatrix}
 \mathbf{P}_{II_{k+1|k}} & \boldsymbol{\Phi}_k \mathbf{P}_{IC_{k|k}} \\
 \mathbf{P}_{IC_{k|k}}^\top \boldsymbol{\Phi}_k^\top & \mathbf{P}_{CC_{k|k}}
 \end{pmatrix}
-\end{equation*}
+\in \mathbb{R}^{(21+6N) \times (21+6N)}
+}
+\end{equation}
+
+{\color{red}why: Fix the covariance to be symmetric}
+
+\begin{equation}
+\mathbf{P}_{k+1|k} = \frac{\mathbf{P}_{k+1|k} + \mathbf{P}_{k+1|k}^{\top}}{2}
+\end{equation}
 
 其中Camera的covariance暂时还没有变化是因为这个时间段图像还没有到来,只有IMU的影响,但是会影响到IMU与Camera协方差。
 
@@ -407,7 +451,7 @@ IMU状态传播协方差矩阵为
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[scale=0.6]{images/imu_propagate.png}
+\includegraphics[scale=0.4]{images/imu_propagate.png}
 \end{figure}
 
 \subsection{State Augmentation}
@@ -420,32 +464,33 @@ IMU状态传播协方差矩阵为
 
 \begin{equation}
 \begin{aligned}
-{}^C_G\hat{\mathbf{q}} &= {}^C_I\hat{\mathbf{q}} \otimes {}^I_G\hat{\mathbf{q}} \\
-{}^G\hat{\mathbf{p}}_C &= {}^G\hat{\mathbf{p}}_C + C\left({}^I_G\hat{\mathbf{q}}\right)^\top {}^I\hat{\mathbf{p}}_C
+{}^C_G\hat{\mathbf{q}} = {}^C_I\hat{\mathbf{q}} \otimes {}^I_G\hat{\mathbf{q}}, \quad
+{}^G\hat{\mathbf{p}}_C = {}^G\hat{\mathbf{p}}_I + C\left({}^I_G\hat{\mathbf{q}}\right)^\top {}^I\hat{\mathbf{p}}_C
 \end{aligned}
 \end{equation}
 
 \subsubsection{状态协方差扩增}
 
-增广的状态协方差矩阵为（{\color{red}为什么}）
+增广的状态协方差矩阵为（{\color{red}why}）
 
 \begin{equation}
 \begin{aligned}
 \mathbf{P}_{k|k}^{\prime}
-&= 
+= 
 \begin{pmatrix}
 \mathbf{I}_{21+6N} \\ \mathbf{J}
 \end{pmatrix}
 \mathbf{P}_{k|k}
 \begin{pmatrix}
 \mathbf{I}_{21+6N} \\ \mathbf{J}
-\end{pmatrix}^\top \\
-&=
+\end{pmatrix}^\top 
+=
 \begin{bmatrix}
 \mathbf{P}_{k|k} & (\mathbf{J} \mathbf{P}_{k|k})^T \\
 \mathbf{J} \mathbf{P}_{k|k} & \mathbf{J} \mathbf{P}_{k|k} \mathbf{J}^T
 \end{bmatrix}
 \end{aligned}
+\in \mathbb{R}^{(21+6N+6) \times (21+6N+6)}
 \end{equation}
 
 其中（下式参考\citep{sun2018robust}，而代码参考\cite{mourikis2007multi}，{\color{red}哪一个正确}），
@@ -496,6 +541,7 @@ C\left({}^I_G\hat{\mathbf{q}}\right) & \mathbf{0}_{3\times 9} &
 则
 
 \begin{equation}
+{\color{blue}
 \mathbf{P}_{k|k}^{\prime} =
 \begin{bmatrix}
 \mathbf{P}_{k|k} & \mathbf{J}_P^T \\
@@ -503,14 +549,21 @@ C\left({}^I_G\hat{\mathbf{q}}\right) & \mathbf{0}_{3\times 9} &
 \end{bmatrix}
 \quad \text{where} \quad
 \mathbf{J}_P = \left(\mathbf{J}_I \mathbf{P}_{11} \quad \mathbf{J}_I \mathbf{P}_{12}\right)
+}
 \end{equation}
-
-图形化表示如下
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[scale=0.6]{images/visual_conv_augmentation.png}
+\includegraphics[scale=0.45]{images/visual_conv_augmentation.png}
 \end{figure}
+
+{\color{red}why: Fix the covariance to be symmetric}
+
+\begin{equation}
+\mathbf{P}_{k|k}^{\prime} = 
+\frac{\mathbf{P}_{k|k}^{\prime} + {\mathbf{P}_{k|k}^{\prime}}^{\top}}{2}
+\end{equation}
+
 
 \subsection{Measurement Update}
 
@@ -518,10 +571,10 @@ C\left({}^I_G\hat{\mathbf{q}}\right) & \mathbf{0}_{3\times 9} &
 
 \begin{enumerate}
 
-\item 计算获取世界坐标系下的3D特征点，代码在 \verb|Feature::generateInitialGuess|
+\item 计算获取世界坐标系下的3D特征点，代码在 \verb|Feature::initializePosition|
 
 \begin{itemize}
-\item 根据对极几何原理，三角化计算初始深度，得到初始三维点坐标
+\item 据对极几何原理，三角化计算初始深度，得到初始三维点坐标
 \item 通过L-M算法迭代优化得到更加精确的世界系三维点
 \end{itemize}
 
@@ -579,7 +632,7 @@ C\left({}^{C_{i, 2}}_G\mathbf{q}\right)
 \end{gathered}
 \end{equation}
 
-问题：{\color{red}{Modifty the measurement Jacobian to ensure observability constrain}}
+{\color{red}{why: Modifty the measurement Jacobian to ensure observability constrain, Ref: OC-VINS}}
 
 \item 叠加对同一特征点的多个观测（代码在 \verb|MsckfVio::featureJacobian|）
 
@@ -593,8 +646,7 @@ C\left({}^{C_{i, 2}}_G\mathbf{q}\right)
 \mathbf{H}_f^j \in \mathbb{R}^{4M \times 3}
 \end{equation*}
 
-
-\item 为避免${}^G\mathbf{p}_j$的不确定性对测量残差的影响，将残差投影到$\mathbf{H}_{f_i}^j$的左零空间
+为避免${}^G\mathbf{p}_j$的不确定性对测量残差的影响，将残差投影到$\mathbf{H}_{f_i}^j$的左零空间 $\mathbf{V} \in \mathbb{R}^{4M \times (4M-3)}$
 
 \begin{equation}
 \mathbf{r}^j_o 
@@ -602,7 +654,8 @@ C\left({}^{C_{i, 2}}_G\mathbf{q}\right)
 = \mathbf{V}^\top \mathbf{H}_{\mathbf{x}}^j\tilde{\mathbf{x}} +
 \mathbf{V}^\top \mathbf{n}^j
 = \mathbf{H}_{\mathbf{x}, o}^j\tilde{\mathbf{x}} + 
-\mathbf{n}^j_o
+\mathbf{n}^j_o 
+\in \mathbb{R}^{(4M-3) \times 1}
 \end{equation}
 
 零空间$\mathbf{V}$通过SVD分解得到（代码在 \verb|MsckfVio::featureJacobian|）
@@ -619,6 +672,7 @@ r   = A.transpose() * r_j;
 \begin{equation}
 \label{equ:visual_residual_final}
 \mathbf{r}_{o}=\mathbf{H}_{\mathbf{X}} \widetilde{\mathbf{X}}+\mathbf{n}_{o}
+\in \mathbb{R}^{N(4M-3) \times 1}
 \end{equation}
 
 \begin{lstlisting}
