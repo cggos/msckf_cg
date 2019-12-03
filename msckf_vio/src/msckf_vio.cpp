@@ -223,6 +223,7 @@ void MsckfVio::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     return;
 }
 
+// QXC：这个初始化方法不对加计零偏做补偿，可能会出问题 ???
 void MsckfVio::initializeGravityAndBias() {
     // Initialize gravity and gyro bias.
     Vector3d sum_angular_vel = Vector3d::Zero();
@@ -239,15 +240,17 @@ void MsckfVio::initializeGravityAndBias() {
         sum_linear_acc  += linear_acc;
     }
 
-    state_server.imu_state.gyro_bias = sum_angular_vel / imu_msg_buffer.size(); // 平均角速度作为陀螺仪的bias
-    Vector3d gravity_imu = sum_linear_acc / imu_msg_buffer.size(); // IMU系下重力向量 This is the gravity in the IMU frame.
+    // 平均角速度作为陀螺仪的bias
+    state_server.imu_state.gyro_bias = sum_angular_vel / imu_msg_buffer.size();
+    // IMU系下重力向量 This is the gravity in the IMU frame
+    Vector3d gravity_imu = sum_linear_acc / imu_msg_buffer.size();
 
     // Initialize the initial orientation, so that the estimation is consistent with the inertial frame.
-    double gravity_norm = gravity_imu.norm(); // 平均加速度的模值g作为重力加速度
-    IMUState::gravity = Vector3d(0.0, 0.0, -gravity_norm); // World系下重力向量
+    double gravity_norm = gravity_imu.norm(); // 平均加速度的模值作为重力加速度模值g
+    IMUState::gravity = Vector3d(0.0, 0.0, -gravity_norm); // World系下重力向量（天向）
 
-    // 计算 World系重力向量(0,0,g) 和 IMU系下重力向量 之间的夹角(旋转四元数), 标定初始时刻IMU系与world系之间的夹角
-    Quaterniond q0_i_w = Quaterniond::FromTwoVectors(gravity_imu, -IMUState::gravity); // TODO[cg]: why -IMUState::gravity 带负号
+    // 计算初始时刻 World系重力向量(0,0,g) 和 IMU系下重力向量 之间的姿态(旋转四元数)
+    Quaterniond q0_i_w = Quaterniond::FromTwoVectors(gravity_imu, -IMUState::gravity);
     state_server.imu_state.orientation = rotationToQuaternion(q0_i_w.toRotationMatrix().transpose());
 
     return;
@@ -570,7 +573,7 @@ void MsckfVio::predictNewState(const double& dt, const Vector3d& gyro, const Vec
         dq_dt  = (cos(gyro_norm * dt * 0.5)  * Matrix4d::Identity() + 1 / gyro_norm * sin(gyro_norm * dt * 0.5)  * Omega) * q;
         dq_dt2 = (cos(gyro_norm * dt * 0.25) * Matrix4d::Identity() + 1 / gyro_norm * sin(gyro_norm * dt * 0.25) * Omega) * q;
     } else {
-        dq_dt  = (Matrix4d::Identity() + 0.5  * dt * Omega) * cos(gyro_norm * dt * 0.5)  * q;
+        dq_dt  = (Matrix4d::Identity() + 0.5  * dt * Omega) * cos(gyro_norm * dt * 0.5)  * q; // TODO[cg]: why cos(gyro_norm * dt * 0.5)
         dq_dt2 = (Matrix4d::Identity() + 0.25 * dt * Omega) * cos(gyro_norm * dt * 0.25) * q;
     }
     Matrix3d dR_dt_transpose  = quaternionToRotation(dq_dt).transpose();
@@ -633,9 +636,10 @@ void MsckfVio::stateAugmentation(const double& time) {
     J.block<3, 3>(0, 0)  = R_i_c;
     J.block<3, 3>(0, 15) = Matrix3d::Identity();
     J.block<3, 3>(3, 0)  = skewSymmetric(R_w_i.transpose() * t_c_i);
-    //J.block<3, 3>(3, 0) = -R_w_i.transpose()*skewSymmetric(t_c_i);
+//    J.block<3, 3>(3, 0) = -R_w_i.transpose()*skewSymmetric(t_c_i);
     J.block<3, 3>(3, 12) = Matrix3d::Identity();
     J.block<3, 3>(3, 18) = Matrix3d::Identity();
+//    J.block<3, 3>(3, 18) = R_w_i.transpose(); // cggos
 
     // Resize the state covariance matrix.
     size_t old_rows = state_server.state_cov.rows();
@@ -736,7 +740,7 @@ void MsckfVio::measurementJacobian(
     H_f = dz_dpc0 * dpc0_dpg + dz_dpc1 * dpc1_dpg;
 
     // TODO[cg]: why
-    // Modifty the measurement Jacobian to ensure observability constrain.
+    // Modifty the measurement Jacobian to ensure observability constrain. Ref: OC-VINS
     Matrix<double, 4, 6> A = H_x;
     Matrix<double, 6, 1> u = Matrix<double, 6, 1>::Zero();
     u.block<3, 1>(0, 0) = quaternionToRotation(cam_state.orientation_null) * IMUState::gravity;
