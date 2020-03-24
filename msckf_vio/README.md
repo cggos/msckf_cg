@@ -1,4 +1,4 @@
-# msckf_vio_cg
+# msckf_vio
 
 Modified version of [KumarRobotics/msckf_vio](https://github.com/KumarRobotics/msckf_vio) (commit e3a39a9 on Jul 26, 2019), a stereo version of MSCKF.
 
@@ -7,6 +7,7 @@ The software takes in synchronized stereo images and IMU messages and generates 
 * tested on Ubuntu 16.04 with ROS Kinetic
 * Paper Draft: *[Robust Stereo Visual Inertial Odometry for Fast Autonomous Flight](https://arxiv.org/abs/1712.00036)*
 
+-----
 
 ## Build
 

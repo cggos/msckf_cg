@@ -7,3 +7,13 @@
   - Modified version of [KumarRobotics/msckf_vio](https://github.com/KumarRobotics/msckf_vio) (commit e3a39a9 on Jul 26, 2019), a **Stereo** version of MSCKF.
 
 -----
+
+## Build
+
+```sh
+mkdir -p ws_msckf/src
+cd ws_msckf/src
+git clone xxx
+cd ../
+catkin_make --cmake-args -DCMAKE_BUILD_TYPE=Release -j2
+```
