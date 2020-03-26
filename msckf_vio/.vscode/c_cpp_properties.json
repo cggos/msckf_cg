@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "./include",
+                "/usr/include/eigen3",
+                "/opt/ros/kinetic/include",
+                "/usr/include/suitesparse",
+                "/usr/include/pcl-1.7",
+                "/opt/ros/kinetic/include/opencv-3.3.1-dev"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+        }
+    ],
+    "version": 4
+}
