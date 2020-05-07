@@ -1,60 +1,44 @@
 # msckf_mono
 
-Monocular MSCKF with ROS Support
+Monocular MSCKF with ROS Support.
+
+The actual MSCKF is fully templated based on the floating point type that you want. It should be easy to compile for applications that see real speedups from smaller floating point sizes.
+
+We have run this on platforms ranging from the odroid to a modern laptop, so hopefully it should work on whatever device you want.
 
 -----
 
 # Requirements
 
 - ROS Kinetic with Boost, OpenCV and Eigen
-- https://github.com/uzh-rpg/fast build and install according to their instructions
+- fast: https://github.com/uzh-rpg/fast
 
-# Euroc Dataset -- ROS Bag
-Download MH_03_medium.bag from into the euroc folder in this repository.
+# Run with Dataset
 
-```
-wget http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_03_medium/MH_03_medium.bag
-mv MH_03_medium.bag <path_to_msckf_mono>/euroc/.
-```
+* Euroc Dataset -- ROS Bag
 
-Now run the MSCKF on this sequence
-```
-roslaunch msckf_mono euroc.launch
+```sh
+# Modify the path of bag file before running the launch file
+roslaunch msckf_mono euroc.launch # default MH_03_medium.bag
 ```
 
-RViz will come up by default showing the odometry and image with tracks.
+* Euroc Dataset -- ASL Format
 
+```sh
+# Place `%YAML:1.0` at the top of each YAML file of the ASL dataset. Currently OpenCV is being used to load these YAMLs and expects this header to exist.
 
-# Euroc Dataset -- ASL Format
-Download one (or more) of the datasets from https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets in the ASL dataset format
-Place
-```
-%YAML:1.0
-```
-At the top of each YAML file. Currently OpenCV is being used to load these YAMLs and expects this header to exist.
+# The stand_still_end is going to be the time just before the quad takes off for the actual sequence--take care to find this before starting the MSCKF.
 
-The stand_still_end is going to be the time just before the quad takes off for the actual sequence--take care to find this before starting the MSCKF.
-
-Now you can run the MSCKF on the individual sequence
-```
-roslaunch msckf_mono asl_msckf.launch data_set_path:=<directory of mav0 inside of sequence> stand_still_end:=<time to start at with dot at the end>
+roslaunch msckf_mono asl_msckf.launch data_set_path:=<directory of mav0 inside of sequence> stand_still_start:=<time to start at with dot at the end>
 ```
 
-RViz will come up by default and display the image with tracks on the left and the generated path and map on the right.
+eg:
 
-![Machine Hall 03 Medium](https://github.com/daniilidis-group/msckf_mono/raw/master/euroc/MH03.png)
+```sh
+roslaunch msckf_mono asl_msckf.launch data_set_path:=/home/cg/projects/datasets/euroc/MH_01_easy/mav0 stand_still_start:=1403636601213555456. stand_still_end:=1403636763813555456.
+```
 
-The two paths shown, green is ground truth and red is from the MSCKF.
-
-# MSCKF
-
-The actual MSCKF is fully templated based on the floating point type that you want. It should be easy to compile for applications that see real speedups from smaller floating point sizes.
-
-We have run this on platforms ranging from the odroid to a modern laptop, so hopefully it should work on whatever device you want.
-
-# Used in
-- The Euroc dataset was evaluated in http://rpg.ifi.uzh.ch/docs/ICRA18_Delmerico.pdf
-- The core MSCKF was used in http://openaccess.thecvf.com/content_cvpr_2017/papers/Zhu_Event-Based_Visual_Inertial_CVPR_2017_paper.pdf
+![Machine Hall 03 Medium](./euroc/MH03.png)
 
 # TODO
 - ROS Nodelet
