@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(msckf_vio)
 
+set(CMAKE_BUILD_TYPE "Release")
+
 add_compile_options(-std=c++11)
+add_definitions(-w) # close warning
 
 # Modify cmake module path if new .cmake files are required
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")

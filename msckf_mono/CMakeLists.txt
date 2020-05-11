@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(msckf_mono)
 
+set(CMAKE_BUILD_TYPE "Release")
+
 set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse4.2 -msse -msse2 -mavx -funroll-loops")
@@ -9,6 +11,8 @@ SET(CMAKE_BUILD_TYPE "RelWithDebInfo")
 IF(NOT CMAKE_BUILD_TYPE)
   SET(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: None (CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
 ENDIF()
+
+add_definitions(-w)
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -std=c++14 -DEIGEN_NO_DEBUG")
 IF(DEFINED ENV{ARM_ARCHITECTURE})
