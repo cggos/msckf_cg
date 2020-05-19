@@ -23,8 +23,12 @@ catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 ### with Dataset
 
-* run with EuRoC dataset V1_01_easy.bag
+* run with EuRoC dataset
   ```sh
+  rosbag play -s 25 MH_01_easy.bag
+  # or
+  rosbag play V1_01_easy.bag
+
   roslaunch msckf_vio msckf_vio_euroc.launch [rviz:=true]
   ```
 
