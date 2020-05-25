@@ -30,6 +30,8 @@
 using namespace std;
 using namespace Eigen;
 
+#define CHI2_TEST 0
+
 namespace msckf_vio{
 
 // Static member variables in IMUState class.
@@ -202,7 +204,7 @@ bool MsckfVio::initialize() {
         return false;
     ROS_INFO("Finish creating ROS IO...");
 
-    pose_outfile_.open("msckf_pose_out.txt");
+    pose_outfile_.open("msckf_pose_out.tum");
 
     return true;
 }
@@ -783,6 +785,15 @@ void MsckfVio::featureJacobian(
         Vector4d r_i = Vector4d::Zero();
         measurementJacobian(cam_id, feature.id, H_xi, H_fi, r_i);
 
+#if CHI2_TEST
+        // [cggos 20200525] chi-squared test for reprojection error
+        double chi2 = r_i.squaredNorm() * std::pow(460 / 2.0, 2);
+        if(chi2 > 9.488)  { // 4 DoF
+            // printf("[cggos %s] failed chi2: %f\n", __FUNCTION__, chi2);
+            continue;
+        }
+#endif
+
         auto cam_state_iter = state_server.cam_states.find(cam_id);
         int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
 
@@ -792,6 +803,17 @@ void MsckfVio::featureJacobian(
         r_j.segment<4>(stack_cntr) = r_i;
         stack_cntr += 4;
     }
+
+#if CHI2_TEST
+    if(stack_cntr > 0) {
+        jacobian_row_size = stack_cntr;
+        H_xj.conservativeResize(jacobian_row_size, H_xj.cols());
+        H_fj.conservativeResize(jacobian_row_size, H_fj.cols());
+        r_j.conservativeResize(jacobian_row_size);
+    } else {
+        return;
+    }
+#endif
 
     // Project the residual and Jacobians onto the nullspace of H_fj.
     JacobiSVD<MatrixXd> svd_helper(H_fj, ComputeFullU | ComputeThinV);
@@ -898,6 +920,9 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 }
 
 bool MsckfVio::gatingTest(const MatrixXd& H, const VectorXd& r, const int& dof) {
+
+    if(H.isZero(0)) return false; // check matrix empty
+
     MatrixXd P1 = H * state_server.state_cov * H.transpose();
     MatrixXd P2 = Feature::observation_noise * MatrixXd::Identity(H.rows(), H.rows());
     double gamma = r.transpose() * (P1 + P2).ldlt().solve(r);
