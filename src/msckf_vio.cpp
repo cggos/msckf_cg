@@ -31,6 +31,7 @@ using namespace std;
 using namespace Eigen;
 
 #define CHI2_TEST 0
+#define WITH_SPQR 1
 
 namespace msckf_vio{
 
@@ -833,11 +834,12 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
     MatrixXd H_thin;
     VectorXd r_thin;
 
+    // HouseholderQR 处理时间是 SPQR 的 6-7 倍
+    // HouseholderQR 处理时间是 FullPivHouseholderQR 的 1.5-2.5 倍
     if (H.rows() > H.cols()) {
-        // Convert H to a sparse matrix.
-        SparseMatrix<double> H_sparse = H.sparseView();
 
-        // Perform QR decompostion on H_sparse.
+#ifdef WITH_SPQR
+        SparseMatrix<double> H_sparse = H.sparseView(); // Convert H to a sparse matrix.
         SPQR<SparseMatrix<double> > spqr_helper;
         spqr_helper.setSPQROrdering(SPQR_ORDERING_NATURAL);
         spqr_helper.compute(H_sparse);
@@ -849,13 +851,17 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
         H_thin = H_temp.topRows(21 + state_server.cam_states.size() * 6);
         r_thin = r_temp.head(21 + state_server.cam_states.size() * 6);
+#endif
 
-        //HouseholderQR<MatrixXd> qr_helper(H);
-        //MatrixXd Q = qr_helper.householderQ();
-        //MatrixXd Q1 = Q.leftCols(21+state_server.cam_states.size()*6);
-
-        //H_thin = Q1.transpose() * H;
-        //r_thin = Q1.transpose() * r;
+#ifdef WITH_HHQR
+        Eigen::HouseholderQR<MatrixXd> qr_helper(H);
+        MatrixXd Q = qr_helper.householderQ();
+        // Eigen::FullPivHouseholderQR<Eigen::MatrixXd> fphqr_helper = H.fullPivHouseholderQr();
+        // Eigen::MatrixXd Q = fphqr_helper.matrixQ();
+        MatrixXd Q1 = Q.leftCols(21+state_server.cam_states.size()*6);
+        H_thin = Q1.transpose() * H;
+        r_thin = Q1.transpose() * r;
+#endif
     } else {
         H_thin = H;
         r_thin = r;
