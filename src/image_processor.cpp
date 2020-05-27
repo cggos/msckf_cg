@@ -1234,17 +1234,17 @@ void ImageProcessor::drawFeaturesStereo() {
         for (int i = 1; i < processor_config.grid_row; ++i) {
             Point pt1(0, i * grid_height);
             Point pt2(img_width * 2, i * grid_height);
-            line(out_img, pt1, pt2, Scalar(255, 0, 0));
+            line(out_img, pt1, pt2, Scalar(255, 0, 0), 2);
         }
         for (int i = 1; i < processor_config.grid_col; ++i) {
             Point pt1(i * grid_width, 0);
             Point pt2(i * grid_width, img_height);
-            line(out_img, pt1, pt2, Scalar(255, 0, 0));
+            line(out_img, pt1, pt2, Scalar(255, 0, 0), 2);
         }
         for (int i = 1; i < processor_config.grid_col; ++i) {
             Point pt1(i * grid_width + img_width, 0);
             Point pt2(i * grid_width + img_width, img_height);
-            line(out_img, pt1, pt2, Scalar(255, 0, 0));
+            line(out_img, pt1, pt2, Scalar(255, 0, 0), 2);
         }
 
         // Collect features ids in the previous frame.
