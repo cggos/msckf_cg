@@ -90,6 +90,7 @@ add_dependencies(msckf_vio
 target_link_libraries(msckf_vio
   ${catkin_LIBRARIES}
   ${SUITESPARSE_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
 
 # Msckf Vio nodelet

@@ -16,6 +16,10 @@
 #include <Eigen/SparseCore>
 #include <Eigen/SPQRSupport>
 #include <boost/math/distributions/chi_squared.hpp>
+#include <boost/format.hpp>
+
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 #include <eigen_conversions/eigen_msg.h>
 #include <tf_conversions/tf_eigen.h>
@@ -32,6 +36,7 @@ using namespace Eigen;
 
 #define CHI2_TEST 0
 #define WITH_SPQR 1
+#define DEBUG_IMG_J 0
 
 namespace msckf_vio{
 
@@ -358,13 +363,13 @@ void MsckfVio::featureCallback(const CameraMeasurementConstPtr& msg) {
     double add_observations_time = (ros::Time::now() - start_time).toSec();
 
     // 对于那些lost(当前帧未track)的特征, 剔除掉观测小于3个的特征, 如果没有初始化尝试进行初始化, 剔除掉初始化失败的特征.
-    // 对于剩下的特征进行观测更新(measurementUpdate), 然后从map_server中移除.也就是说只有跟丢后的特征才会用于观测更新
+    // 对于剩下的特征进行观测更新, 然后从map_server中移除.也就是说只有跟丢后的特征才会用于观测更新
     // Perform measurement update if necessary.
     start_time = ros::Time::now();
     removeLostFeatures();
     double remove_lost_features_time = (ros::Time::now() - start_time).toSec();
 
-    // 当state_server中cam_states超过最大个数时, 需要移除冗余的states，也会调用 measurementUpdate
+    // 当state_server中cam_states超过最大个数时, 需要移除冗余的states
     start_time = ros::Time::now();
     pruneCamStateBuffer();
     double prune_cam_states_time = (ros::Time::now() - start_time).toSec();
@@ -805,6 +810,21 @@ void MsckfVio::featureJacobian(
         stack_cntr += 4;
     }
 
+#if DEBUG_IMG_J
+    // if(stack_cntr > 0) {
+    //     cv::Mat Jhx(H_xj.rows(), H_xj.cols(), CV_8UC1);
+    //     for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
+    //         double val = H_xj(h, w);
+    //         Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+    //     }
+    //     static int idx = 0;
+    //     char path[255];
+    //     sprintf(path, "/home/cg/tmp/msckf/img_fj/%05d_%03d_%03d.png", idx, H_xj.rows(), H_xj.cols());
+    //     cv::imwrite(path, Jhx);
+    //     idx++;
+    // }
+#endif
+
 #if CHI2_TEST
     if(stack_cntr > 0) {
         jacobian_row_size = stack_cntr;
@@ -922,6 +942,41 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
     MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
     state_server.state_cov = state_cov_fixed;
 
+#if DEBUG_IMG_J
+    if(H.rows() > 10 && H.cols() > 10) {
+        static int idx = 0;
+
+        cv::Mat Jhx(H.rows(), H.cols(), CV_8UC1);
+        for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
+            double val = H(h, w);
+            Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+        }
+        char path01[255];
+        sprintf(path01, "/home/cg/tmp/msckf/img/%05d_01_%03d_%03d.png", idx, H.rows(), H.cols());
+        cv::imwrite(path01, Jhx);
+
+        cv::Mat Jhthin(H_thin.rows(), H_thin.cols(), CV_8UC1);
+        for(int h=0; h<Jhthin.rows; h++) for(int w=0; w<Jhthin.cols; w++) {
+            double val = H_thin(h, w);
+            Jhthin.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+        }
+        char path02[255];
+        sprintf(path02, "/home/cg/tmp/msckf/img/%05d_02_%03d_%03d.png", idx, H_thin.rows(), H_thin.cols());
+        cv::imwrite(path02, Jhthin);
+
+        cv::Mat JP(state_server.state_cov.rows(), state_server.state_cov.cols(), CV_8UC1);
+        for(int h=0; h<JP.rows; h++) for(int w=0; w<JP.cols; w++) {
+            double val = state_server.state_cov(h, w);
+            JP.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+        }
+        char path03[255];
+        sprintf(path03, "/home/cg/tmp/msckf/img/%05d_03_%03d_%03d.png", idx, state_server.state_cov.rows(), state_server.state_cov.cols());
+        cv::imwrite(path03, JP);
+
+        idx++;
+    }
+#endif
+
     return;
 }
 
@@ -1021,6 +1076,24 @@ void MsckfVio::removeLostFeatures() {
 
     H_x.conservativeResize(stack_cntr, H_x.cols());
     r.conservativeResize(stack_cntr);
+
+#if DEBUG_IMG_J
+    if(stack_cntr > 10) {
+        cv::Mat Jhx(H_x.rows(), H_x.cols(), CV_8UC1);
+        for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
+            double val = H_x(h, w);
+            Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+        }
+        static int idx = 0;
+        char path[255];
+        sprintf(path, "/home/cg/tmp/msckf/img01/%05d_%03d_%03d.png", idx, H_x.rows(), H_x.cols());
+        cv::imwrite(path, Jhx);
+        idx++;
+        // cv::threshold(Jhx, Jhx, 0, 255, cv::THRESH_BINARY);
+        cv::imshow("mat_H01", Jhx);
+        cv::waitKey(5);
+    }
+#endif
 
     // Perform the measurement update step.
     measurementUpdate(H_x, r);
@@ -1151,6 +1224,24 @@ void MsckfVio::pruneCamStateBuffer() {
 
     H_x.conservativeResize(stack_cntr, H_x.cols());
     r.conservativeResize(stack_cntr);
+
+#if DEBUG_IMG_J
+    if(stack_cntr > 10) {
+        cv::Mat Jhx(H_x.rows(), H_x.cols(), CV_8UC1);
+        for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
+            double val = H_x(h, w);
+            Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
+        }
+        static int idx = 0;
+        char path[255];
+        sprintf(path, "/home/cg/tmp/msckf/img02/%05d_%03d_%03d.png", idx, H_x.rows(), H_x.cols());
+        cv::imwrite(path, Jhx);
+        idx++;
+        // cv::threshold(Jhx, Jhx, 0, 255, cv::THRESH_BINARY);
+        cv::imshow("mat_H02", Jhx);
+        cv::waitKey(5);
+    }
+#endif
 
     // Perform measurement update.
     measurementUpdate(H_x, r);
