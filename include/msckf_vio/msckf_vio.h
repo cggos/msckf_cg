@@ -68,6 +68,8 @@ namespace msckf_vio {
         typedef boost::shared_ptr<const MsckfVio> ConstPtr;
 
     private:
+        enum MeasUpdateType {DEFAULT = 0, RM_FTR, PR_CAM};
+
         /**
          * @brief StateServer Store one IMU states and several camera states for constructing measurement model.
          */
@@ -170,7 +172,8 @@ namespace msckf_vio {
          * @param H
          * @param r
          */
-        void measurementUpdate(const Eigen::MatrixXd &H, const Eigen::VectorXd &r);
+        void measurementUpdate(const Eigen::MatrixXd &H, const Eigen::VectorXd &r, 
+                               const std::vector<StateIDType> &cam_state_ids = {}, MeasUpdateType type = DEFAULT);
 
         bool gatingTest(const Eigen::MatrixXd &H, const Eigen::VectorXd &r, const int &dof);
 

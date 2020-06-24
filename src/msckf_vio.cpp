@@ -846,7 +846,8 @@ void MsckfVio::featureJacobian(
     return;
 }
 
-void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
+void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r, 
+    const std::vector<StateIDType> &cam_state_ids, MeasUpdateType type) {
     if (H.rows() == 0 || r.rows() == 0)
         return;
 
@@ -889,10 +890,46 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
     // Compute the Kalman gain.
     const MatrixXd &P = state_server.state_cov;
-    MatrixXd S = H_thin * P * H_thin.transpose() +
-            Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
+
+    MatrixXd HP;
+    MatrixXd HPH;
+    MatrixXd S;
+    switch (type) {
+        case PR_CAM: {
+            int sz = cam_state_ids.size();
+            MatrixXd H01 = MatrixXd::Zero(H_thin.rows(), 6*sz);
+            MatrixXd P01 = MatrixXd::Zero(6*sz, P.cols());
+            for(int i=0; i<sz; ++i) {
+                StateIDType cam_id = cam_state_ids[i];
+                auto cam_state_iter = state_server.cam_states.find(cam_id);
+                int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
+                H01.block(0, 6*i, H01.rows(), 6) = H_thin.block(0, 21 + 6 * cam_state_cntr, H_thin.rows(), 6);
+                P01.block(6*i, 0, 6, P01.cols()) = P.block(21 + 6 * cam_state_cntr, 0, 6, P.cols());
+            }
+            HP.noalias() = H01 * P01;
+            {
+                // TODO: 矩阵分块乘积
+            }
+            MatrixXd HP01 = MatrixXd::Zero(HP.rows(), 6*sz);
+            for(int i=0; i<sz; ++i) {
+                StateIDType cam_id = cam_state_ids[i];
+                auto cam_state_iter = state_server.cam_states.find(cam_id);
+                int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
+                HP01.block(0, 6*i, HP01.rows(), 6) = HP.block(0, 21 + 6 * cam_state_cntr, HP.rows(), 6);
+            }
+            HPH.noalias() = HP01 * H01.transpose();
+        } break;
+        case RM_FTR: {
+        } break;
+        default: {
+            HP = H_thin * P;
+            HPH = HP * H_thin.transpose();
+        } break;
+    }
+    
+    S = HPH + Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
     //MatrixXd K_transpose = S.fullPivHouseholderQr().solve(H_thin*P);
-    MatrixXd K_transpose = S.ldlt().solve(H_thin * P);
+    MatrixXd K_transpose = S.ldlt().solve(HP);
     MatrixXd K = K_transpose.transpose();
 
     // Compute the error of the state.
@@ -933,10 +970,10 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
     }
 
     // Update state covariance.
-    MatrixXd I_KH = MatrixXd::Identity(K.rows(), H_thin.cols()) - K * H_thin;
+    MatrixXd KHP = K * HP;
     //state_server.state_cov = I_KH*state_server.state_cov*I_KH.transpose() +
     //  K*K.transpose()*Feature::observation_noise;
-    state_server.state_cov = I_KH * state_server.state_cov;
+    state_server.state_cov -=  KHP;
 
     // Fix the covariance to be symmetric
     MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
@@ -1244,7 +1281,7 @@ void MsckfVio::pruneCamStateBuffer() {
 #endif
 
     // Perform measurement update.
-    measurementUpdate(H_x, r);
+    measurementUpdate(H_x, r, rm_cam_state_ids, PR_CAM);
 
     for (const auto &cam_id : rm_cam_state_ids) {
         int cam_sequence = std::distance(state_server.cam_states.begin(), state_server.cam_states.find(cam_id));
