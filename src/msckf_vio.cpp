@@ -1080,8 +1080,7 @@ void MsckfVio::removeLostFeatures() {
         map_server.erase(feature_id);
 
     // Return if there is no lost feature to be processed.
-    if (processed_feature_ids.size() == 0)
-        return;
+    if (processed_feature_ids.empty()) return;
 
     MatrixXd H_x = MatrixXd::Zero(jacobian_row_size, 21 + 6 * state_server.cam_states.size());
     VectorXd r   = VectorXd::Zero(jacobian_row_size);
@@ -1089,7 +1088,10 @@ void MsckfVio::removeLostFeatures() {
     int stack_cntr = 0;
 
     // Process the features which lose track.
-    for (const auto &feature_id : processed_feature_ids) {
+    #pragma omp parallel for
+    for (int n=0; n< processed_feature_ids.size(); n++) {
+
+        FeatureIDType feature_id = processed_feature_ids[n];
         auto &feature = map_server[feature_id];
 
         vector<StateIDType> cam_state_ids(0);
