@@ -16,7 +16,6 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include <boost/shared_ptr.hpp>
 
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
@@ -25,8 +24,7 @@
 #include <tf/transform_broadcaster.h>
 #include <std_srvs/Trigger.h>
 
-#include "imu_state.h"
-#include "cam_state.h"
+#include "state.h"
 #include "feature.hpp"
 #include <msckf_vio/CameraMeasurement.h>
 
@@ -64,12 +62,10 @@ namespace msckf_vio {
          */
         void reset();
 
-        typedef boost::shared_ptr<MsckfVio> Ptr;
-        typedef boost::shared_ptr<const MsckfVio> ConstPtr;
+        typedef std::shared_ptr<MsckfVio> Ptr;
+        typedef std::shared_ptr<const MsckfVio> ConstPtr;
 
     private:
-        enum MeasUpdateType {DEFAULT = 0, RM_FTR, PR_CAM};
-
         /**
          * @brief StateServer Store one IMU states and several camera states for constructing measurement model.
          */
@@ -172,8 +168,7 @@ namespace msckf_vio {
          * @param H
          * @param r
          */
-        void measurementUpdate(const Eigen::MatrixXd &H, const Eigen::VectorXd &r, 
-                               const std::vector<StateIDType> &cam_state_ids = {}, MeasUpdateType type = DEFAULT);
+        void measurementUpdate(const Eigen::MatrixXd &H, const Eigen::VectorXd &r);
 
         bool gatingTest(const Eigen::MatrixXd &H, const Eigen::VectorXd &r, const int &dof);
 

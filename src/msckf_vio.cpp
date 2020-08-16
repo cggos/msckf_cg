@@ -15,8 +15,6 @@
 #include <Eigen/QR>
 #include <Eigen/SparseCore>
 #include <Eigen/SPQRSupport>
-#include <boost/math/distributions/chi_squared.hpp>
-#include <boost/format.hpp>
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -34,7 +32,6 @@
 using namespace std;
 using namespace Eigen;
 
-#define CHI2_TEST 0
 #define WITH_SPQR 1
 #define DEBUG_IMG_J 0
 
@@ -201,10 +198,7 @@ bool MsckfVio::initialize() {
     state_server.continuous_noise_cov.block<3, 3>(9, 9) = Matrix3d::Identity() * IMUState::acc_bias_noise;
 
     // Initialize the chi squared test table with confidence level 0.95.
-    for (int i = 1; i < 100; ++i) {
-        boost::math::chi_squared chi_squared_dist(i);
-        chi_squared_test_table[i] = boost::math::quantile(chi_squared_dist, 0.05);
-    }
+    for (int i = 1; i < 100; ++i) chi_squared_test_table[i] = utils::chi_square_table_p95[i-1];
 
     if (!createRosIO())
         return false;
@@ -344,32 +338,26 @@ void MsckfVio::featureCallback(const CameraMeasurementConstPtr& msg) {
     static int critical_time_cntr = 0;
     double processing_start_time = ros::Time::now().toSec();
 
-    // 对两帧观测之间的所有IMU数据做预积分
     // Propogate the IMU state. that are received before the image msg.
     ros::Time start_time = ros::Time::now();
     batchImuProcessing(msg->header.stamp.toSec());
     double imu_processing_time = (ros::Time::now() - start_time).toSec();
 
-    // 对MSCKF的估计状态进行扩充, 将当前的imu_state加入到状态向量cam_states中, 并扩充6*6的covariance matrix
     // Augment the state vector.
     start_time = ros::Time::now();
     stateAugmentation(msg->header.stamp.toSec());
     double state_augmentation_time = (ros::Time::now() - start_time).toSec();
 
-    // 将特征添加到map_server, 将特征添加到对应feature.id的observations(std::map)中, 并计算跟踪已有特征的比例
     // Add new observations for existing features or new features in the map server.
     start_time = ros::Time::now();
     addFeatureObservations(msg);
     double add_observations_time = (ros::Time::now() - start_time).toSec();
 
-    // 对于那些lost(当前帧未track)的特征, 剔除掉观测小于3个的特征, 如果没有初始化尝试进行初始化, 剔除掉初始化失败的特征.
-    // 对于剩下的特征进行观测更新, 然后从map_server中移除.也就是说只有跟丢后的特征才会用于观测更新
     // Perform measurement update if necessary.
     start_time = ros::Time::now();
     removeLostFeatures();
     double remove_lost_features_time = (ros::Time::now() - start_time).toSec();
 
-    // 当state_server中cam_states超过最大个数时, 需要移除冗余的states
     start_time = ros::Time::now();
     pruneCamStateBuffer();
     double prune_cam_states_time = (ros::Time::now() - start_time).toSec();
@@ -386,7 +374,7 @@ void MsckfVio::featureCallback(const CameraMeasurementConstPtr& msg) {
     double processing_time = processing_end_time - processing_start_time;
     if (processing_time > 1.0 / frame_rate) {
         ++critical_time_cntr;
-        ROS_INFO("\033[1;31mTotal processing time %f/%d...\033[0m", processing_time, critical_time_cntr);
+        printf("\033[1;31mTotal processing time %f/%d...\033[0m\n", processing_time, critical_time_cntr);
         printf("IMU processing time: %f/%f\n", imu_processing_time, imu_processing_time/processing_time);
         printf("State augmentation time: %f/%f\n", state_augmentation_time, state_augmentation_time/processing_time);
         printf("Add observations time: %f/%f\n", add_observations_time, add_observations_time/processing_time);
@@ -547,7 +535,6 @@ void MsckfVio::processModel(const double& time, const Vector3d& m_gyro, const Ve
                 state_server.state_cov.block(21, 0, state_server.state_cov.rows() - 21, 21) * Phi.transpose();
     }
 
-    // TODO[cg]: why
     // Fix the covariance to be symmetric
     MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
     state_server.state_cov = state_cov_fixed;
@@ -791,15 +778,6 @@ void MsckfVio::featureJacobian(
         Vector4d r_i = Vector4d::Zero();
         measurementJacobian(cam_id, feature.id, H_xi, H_fi, r_i);
 
-#if CHI2_TEST
-        // [cggos 20200525] chi-squared test for reprojection error
-        double chi2 = r_i.squaredNorm() * std::pow(460 / 2.0, 2);
-        if(chi2 > 9.488)  { // 4 DoF
-            // printf("[cggos %s] failed chi2: %f\n", __FUNCTION__, chi2);
-            continue;
-        }
-#endif
-
         auto cam_state_iter = state_server.cam_states.find(cam_id);
         int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
 
@@ -825,17 +803,6 @@ void MsckfVio::featureJacobian(
     // }
 #endif
 
-#if CHI2_TEST
-    if(stack_cntr > 0) {
-        jacobian_row_size = stack_cntr;
-        H_xj.conservativeResize(jacobian_row_size, H_xj.cols());
-        H_fj.conservativeResize(jacobian_row_size, H_fj.cols());
-        r_j.conservativeResize(jacobian_row_size);
-    } else {
-        return;
-    }
-#endif
-
     // Project the residual and Jacobians onto the nullspace of H_fj.
     JacobiSVD<MatrixXd> svd_helper(H_fj, ComputeFullU | ComputeThinV);
     MatrixXd A = svd_helper.matrixU().rightCols(jacobian_row_size - 3);
@@ -846,8 +813,7 @@ void MsckfVio::featureJacobian(
     return;
 }
 
-void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r, 
-    const std::vector<StateIDType> &cam_state_ids, MeasUpdateType type) {
+void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
     if (H.rows() == 0 || r.rows() == 0)
         return;
 
@@ -891,43 +857,10 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r,
     // Compute the Kalman gain.
     const MatrixXd &P = state_server.state_cov;
 
-    MatrixXd HP;
-    MatrixXd HPH;
-    MatrixXd S;
-    switch (type) {
-        case PR_CAM: {
-            int sz = cam_state_ids.size();
-            MatrixXd H01 = MatrixXd::Zero(H_thin.rows(), 6*sz);
-            MatrixXd P01 = MatrixXd::Zero(6*sz, P.cols());
-            for(int i=0; i<sz; ++i) {
-                StateIDType cam_id = cam_state_ids[i];
-                auto cam_state_iter = state_server.cam_states.find(cam_id);
-                int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
-                H01.block(0, 6*i, H01.rows(), 6) = H_thin.block(0, 21 + 6 * cam_state_cntr, H_thin.rows(), 6);
-                P01.block(6*i, 0, 6, P01.cols()) = P.block(21 + 6 * cam_state_cntr, 0, 6, P.cols());
-            }
-            HP.noalias() = H01 * P01;
-            {
-                // TODO: 矩阵分块乘积
-            }
-            MatrixXd HP01 = MatrixXd::Zero(HP.rows(), 6*sz);
-            for(int i=0; i<sz; ++i) {
-                StateIDType cam_id = cam_state_ids[i];
-                auto cam_state_iter = state_server.cam_states.find(cam_id);
-                int cam_state_cntr = std::distance(state_server.cam_states.begin(), cam_state_iter);
-                HP01.block(0, 6*i, HP01.rows(), 6) = HP.block(0, 21 + 6 * cam_state_cntr, HP.rows(), 6);
-            }
-            HPH.noalias() = HP01 * H01.transpose();
-        } break;
-        case RM_FTR: {
-        } break;
-        default: {
-            HP = H_thin * P;
-            HPH = HP * H_thin.transpose();
-        } break;
-    }
+    MatrixXd HP  = H_thin * P;
+    MatrixXd HPH = HP * H_thin.transpose();
     
-    S = HPH + Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
+    MatrixXd S = HPH + Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
     //MatrixXd K_transpose = S.fullPivHouseholderQr().solve(H_thin*P);
     MatrixXd K_transpose = S.ldlt().solve(HP);
     MatrixXd K = K_transpose.transpose();
@@ -1024,8 +957,6 @@ bool MsckfVio::gatingTest(const MatrixXd& H, const VectorXd& r, const int& dof) 
     MatrixXd P1 = H * state_server.state_cov * H.transpose();
     MatrixXd P2 = Feature::observation_noise * MatrixXd::Identity(H.rows(), H.rows());
     double gamma = r.transpose() * (P1 + P2).ldlt().solve(r);
-
-    //cout << dof << " " << gamma << " " << chi_squared_test_table[dof] << " ";
 
     if (gamma < chi_squared_test_table[dof]) {
         //cout << "passed" << endl;
@@ -1283,7 +1214,7 @@ void MsckfVio::pruneCamStateBuffer() {
 #endif
 
     // Perform measurement update.
-    measurementUpdate(H_x, r, rm_cam_state_ids, PR_CAM);
+    measurementUpdate(H_x, r);
 
     for (const auto &cam_id : rm_cam_state_ids) {
         int cam_sequence = std::distance(state_server.cam_states.begin(), state_server.cam_states.find(cam_id));

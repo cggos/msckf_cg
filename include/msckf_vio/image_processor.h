@@ -10,7 +10,6 @@
 
 #include <vector>
 #include <map>
-#include <boost/shared_ptr.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/video.hpp>
 
@@ -21,6 +20,8 @@
 #include <sensor_msgs/Image.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
+
+#define WITH_LIFETIME_STATISTICS 0
 
 namespace msckf_vio {
 
@@ -43,8 +44,8 @@ namespace msckf_vio {
         // Initialize the object.
         bool initialize();
 
-        typedef boost::shared_ptr<ImageProcessor> Ptr;
-        typedef boost::shared_ptr<const ImageProcessor> ConstPtr;
+        typedef std::shared_ptr<ImageProcessor> Ptr;
+        typedef std::shared_ptr<const ImageProcessor> ConstPtr;
 
     private:
 
@@ -355,8 +356,8 @@ namespace msckf_vio {
         std::vector<cv::Mat> curr_cam1_pyramid_;
 
         // Features in the previous and current image.
-        boost::shared_ptr<GridFeatures> prev_features_ptr;
-        boost::shared_ptr<GridFeatures> curr_features_ptr;
+        std::shared_ptr<GridFeatures> prev_features_ptr;
+        std::shared_ptr<GridFeatures> curr_features_ptr;
 
         // Number of features after each outlier removal step.
         int before_tracking;
@@ -376,12 +377,12 @@ namespace msckf_vio {
         ros::Publisher tracking_info_pub;
         image_transport::Publisher debug_stereo_pub;
 
+#if WITH_LIFETIME_STATISTICS
         // Debugging
         std::map<FeatureIDType, int> feature_lifetime;
-
         void updateFeatureLifetime();
-
         void featureLifetimeStatistics();
+#endif        
     };
 
     typedef ImageProcessor::Ptr ImageProcessorPtr;

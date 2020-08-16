@@ -5,185 +5,185 @@
  * All rights reserved.
  */
 
-#include <iostream>
-#include <algorithm>
-#include <set>
-#include <Eigen/Dense>
-
-#include <sensor_msgs/image_encodings.h>
-#include <random_numbers/random_numbers.h>
-
 #include <msckf_vio/CameraMeasurement.h>
 #include <msckf_vio/TrackingInfo.h>
 #include <msckf_vio/image_processor.h>
 #include <msckf_vio/utils.h>
+#include <random_numbers/random_numbers.h>
+#include <sensor_msgs/image_encodings.h>
+
+#include <Eigen/Dense>
+#include <algorithm>
+#include <iostream>
+#include <set>
 
 using namespace std;
 using namespace cv;
 using namespace Eigen;
 
 namespace msckf_vio {
-ImageProcessor::ImageProcessor(ros::NodeHandle& n) :
-  nh(n),
-  is_first_img(true),
-  //img_transport(n),
-  stereo_sub(10),
-  prev_features_ptr(new GridFeatures()),
-  curr_features_ptr(new GridFeatures()) {
-  return;
+ImageProcessor::ImageProcessor(ros::NodeHandle &n) : nh(n),
+                                                     is_first_img(true),
+                                                     stereo_sub(10),
+                                                     prev_features_ptr(new GridFeatures()),
+                                                     curr_features_ptr(new GridFeatures()) {
+    return;
 }
 
 ImageProcessor::~ImageProcessor() {
-  destroyAllWindows();
-  //ROS_INFO("Feature lifetime statistics:");
-  //featureLifetimeStatistics();
-  return;
+    destroyAllWindows();
+
+#if WITH_LIFETIME_STATISTICS
+    printf("Feature lifetime statistics:\n");
+    featureLifetimeStatistics();
+#endif
+
+    return;
 }
 
 bool ImageProcessor::loadParameters() {
-  // Camera calibration parameters
-  nh.param<string>("cam0/distortion_model", cam0_distortion_model, string("radtan"));
-  nh.param<string>("cam1/distortion_model", cam1_distortion_model, string("radtan"));
+    // Camera calibration parameters
+    nh.param<string>("cam0/distortion_model", cam0_distortion_model, string("radtan"));
+    nh.param<string>("cam1/distortion_model", cam1_distortion_model, string("radtan"));
 
-  vector<int> cam0_resolution_temp(2);
-  nh.getParam("cam0/resolution", cam0_resolution_temp);
-  cam0_resolution[0] = cam0_resolution_temp[0];
-  cam0_resolution[1] = cam0_resolution_temp[1];
+    vector<int> cam0_resolution_temp(2);
+    nh.getParam("cam0/resolution", cam0_resolution_temp);
+    cam0_resolution[0] = cam0_resolution_temp[0];
+    cam0_resolution[1] = cam0_resolution_temp[1];
 
-  vector<int> cam1_resolution_temp(2);
-  nh.getParam("cam1/resolution", cam1_resolution_temp);
-  cam1_resolution[0] = cam1_resolution_temp[0];
-  cam1_resolution[1] = cam1_resolution_temp[1];
+    vector<int> cam1_resolution_temp(2);
+    nh.getParam("cam1/resolution", cam1_resolution_temp);
+    cam1_resolution[0] = cam1_resolution_temp[0];
+    cam1_resolution[1] = cam1_resolution_temp[1];
 
-  vector<double> cam0_intrinsics_temp(4);
-  nh.getParam("cam0/intrinsics", cam0_intrinsics_temp);
-  cam0_intrinsics[0] = cam0_intrinsics_temp[0];
-  cam0_intrinsics[1] = cam0_intrinsics_temp[1];
-  cam0_intrinsics[2] = cam0_intrinsics_temp[2];
-  cam0_intrinsics[3] = cam0_intrinsics_temp[3];
+    vector<double> cam0_intrinsics_temp(4);
+    nh.getParam("cam0/intrinsics", cam0_intrinsics_temp);
+    cam0_intrinsics[0] = cam0_intrinsics_temp[0];
+    cam0_intrinsics[1] = cam0_intrinsics_temp[1];
+    cam0_intrinsics[2] = cam0_intrinsics_temp[2];
+    cam0_intrinsics[3] = cam0_intrinsics_temp[3];
 
-  vector<double> cam1_intrinsics_temp(4);
-  nh.getParam("cam1/intrinsics", cam1_intrinsics_temp);
-  cam1_intrinsics[0] = cam1_intrinsics_temp[0];
-  cam1_intrinsics[1] = cam1_intrinsics_temp[1];
-  cam1_intrinsics[2] = cam1_intrinsics_temp[2];
-  cam1_intrinsics[3] = cam1_intrinsics_temp[3];
+    vector<double> cam1_intrinsics_temp(4);
+    nh.getParam("cam1/intrinsics", cam1_intrinsics_temp);
+    cam1_intrinsics[0] = cam1_intrinsics_temp[0];
+    cam1_intrinsics[1] = cam1_intrinsics_temp[1];
+    cam1_intrinsics[2] = cam1_intrinsics_temp[2];
+    cam1_intrinsics[3] = cam1_intrinsics_temp[3];
 
-  vector<double> cam0_distortion_coeffs_temp(4);
-  nh.getParam("cam0/distortion_coeffs", cam0_distortion_coeffs_temp);
-  cam0_distortion_coeffs[0] = cam0_distortion_coeffs_temp[0];
-  cam0_distortion_coeffs[1] = cam0_distortion_coeffs_temp[1];
-  cam0_distortion_coeffs[2] = cam0_distortion_coeffs_temp[2];
-  cam0_distortion_coeffs[3] = cam0_distortion_coeffs_temp[3];
+    vector<double> cam0_distortion_coeffs_temp(4);
+    nh.getParam("cam0/distortion_coeffs", cam0_distortion_coeffs_temp);
+    cam0_distortion_coeffs[0] = cam0_distortion_coeffs_temp[0];
+    cam0_distortion_coeffs[1] = cam0_distortion_coeffs_temp[1];
+    cam0_distortion_coeffs[2] = cam0_distortion_coeffs_temp[2];
+    cam0_distortion_coeffs[3] = cam0_distortion_coeffs_temp[3];
 
-  vector<double> cam1_distortion_coeffs_temp(4);
-  nh.getParam("cam1/distortion_coeffs", cam1_distortion_coeffs_temp);
-  cam1_distortion_coeffs[0] = cam1_distortion_coeffs_temp[0];
-  cam1_distortion_coeffs[1] = cam1_distortion_coeffs_temp[1];
-  cam1_distortion_coeffs[2] = cam1_distortion_coeffs_temp[2];
-  cam1_distortion_coeffs[3] = cam1_distortion_coeffs_temp[3];
+    vector<double> cam1_distortion_coeffs_temp(4);
+    nh.getParam("cam1/distortion_coeffs", cam1_distortion_coeffs_temp);
+    cam1_distortion_coeffs[0] = cam1_distortion_coeffs_temp[0];
+    cam1_distortion_coeffs[1] = cam1_distortion_coeffs_temp[1];
+    cam1_distortion_coeffs[2] = cam1_distortion_coeffs_temp[2];
+    cam1_distortion_coeffs[3] = cam1_distortion_coeffs_temp[3];
 
-  cv::Mat     T_imu_cam0 = utils::getTransformCV(nh, "cam0/T_cam_imu");
-  cv::Matx33d R_imu_cam0(T_imu_cam0(cv::Rect(0,0,3,3)));
-  cv::Vec3d t_imu_cam0 = T_imu_cam0(cv::Rect(3,0,1,3));
-  R_cam0_imu =  R_imu_cam0.t();
-  t_cam0_imu = -R_imu_cam0.t() * t_imu_cam0;
+    cv::Mat T_imu_cam0 = utils::getTransformCV(nh, "cam0/T_cam_imu");
+    cv::Matx33d R_imu_cam0(T_imu_cam0(cv::Rect(0, 0, 3, 3)));
+    cv::Vec3d t_imu_cam0 = T_imu_cam0(cv::Rect(3, 0, 1, 3));
+    R_cam0_imu = R_imu_cam0.t();
+    t_cam0_imu = -R_imu_cam0.t() * t_imu_cam0;
 
-  cv::Mat T_cam0_cam1 = utils::getTransformCV(nh, "cam1/T_cn_cnm1");
-  cv::Mat T_imu_cam1 = T_cam0_cam1 * T_imu_cam0;
-  cv::Matx33d R_imu_cam1(T_imu_cam1(cv::Rect(0,0,3,3)));
-  cv::Vec3d t_imu_cam1 = T_imu_cam1(cv::Rect(3,0,1,3));
-  R_cam1_imu =  R_imu_cam1.t();
-  t_cam1_imu = -R_imu_cam1.t() * t_imu_cam1;
+    cv::Mat T_cam0_cam1 = utils::getTransformCV(nh, "cam1/T_cn_cnm1");
+    cv::Mat T_imu_cam1 = T_cam0_cam1 * T_imu_cam0;
+    cv::Matx33d R_imu_cam1(T_imu_cam1(cv::Rect(0, 0, 3, 3)));
+    cv::Vec3d t_imu_cam1 = T_imu_cam1(cv::Rect(3, 0, 1, 3));
+    R_cam1_imu = R_imu_cam1.t();
+    t_cam1_imu = -R_imu_cam1.t() * t_imu_cam1;
 
-  // Processor parameters
-  nh.param<int>("grid_row", processor_config.grid_row, 4);
-  nh.param<int>("grid_col", processor_config.grid_col, 4);
-  nh.param<int>("grid_min_feature_num", processor_config.grid_min_feature_num, 2);
-  nh.param<int>("grid_max_feature_num", processor_config.grid_max_feature_num, 4);
-  nh.param<int>("pyramid_levels", processor_config.pyramid_levels, 3);
-  nh.param<int>("patch_size", processor_config.patch_size, 31);
-  nh.param<int>("fast_threshold", processor_config.fast_threshold, 20);
-  nh.param<int>("max_iteration", processor_config.max_iteration, 30);
-  nh.param<double>("track_precision", processor_config.track_precision, 0.01);
-  nh.param<double>("ransac_threshold", processor_config.ransac_threshold, 3);
-  nh.param<double>("stereo_threshold", processor_config.stereo_threshold, 3);
+    // Processor parameters
+    nh.param<int>("grid_row", processor_config.grid_row, 4);
+    nh.param<int>("grid_col", processor_config.grid_col, 4);
+    nh.param<int>("grid_min_feature_num", processor_config.grid_min_feature_num, 2);
+    nh.param<int>("grid_max_feature_num", processor_config.grid_max_feature_num, 4);
+    nh.param<int>("pyramid_levels", processor_config.pyramid_levels, 3);
+    nh.param<int>("patch_size", processor_config.patch_size, 31);
+    nh.param<int>("fast_threshold", processor_config.fast_threshold, 20);
+    nh.param<int>("max_iteration", processor_config.max_iteration, 30);
+    nh.param<double>("track_precision", processor_config.track_precision, 0.01);
+    nh.param<double>("ransac_threshold", processor_config.ransac_threshold, 3);
+    nh.param<double>("stereo_threshold", processor_config.stereo_threshold, 3);
 
-  ROS_INFO("ImageProcessor begin ===========================================");
+    ROS_INFO("ImageProcessor begin ===========================================");
 
-  ROS_INFO("cam0_resolution: %d, %d", cam0_resolution[0], cam0_resolution[1]);
-  ROS_INFO("cam0_intrinscs: %f, %f, %f, %f",
-          cam0_intrinsics[0], cam0_intrinsics[1], cam0_intrinsics[2], cam0_intrinsics[3]);
-  ROS_INFO("cam0_distortion_model: %s", cam0_distortion_model.c_str());
-  ROS_INFO("cam0_distortion_coefficients: %f, %f, %f, %f",
-          cam0_distortion_coeffs[0], cam0_distortion_coeffs[1], cam0_distortion_coeffs[2], cam0_distortion_coeffs[3]);
+    ROS_INFO("cam0_resolution: %d, %d", cam0_resolution[0], cam0_resolution[1]);
+    ROS_INFO("cam0_intrinscs: %f, %f, %f, %f",
+             cam0_intrinsics[0], cam0_intrinsics[1], cam0_intrinsics[2], cam0_intrinsics[3]);
+    ROS_INFO("cam0_distortion_model: %s", cam0_distortion_model.c_str());
+    ROS_INFO("cam0_distortion_coefficients: %f, %f, %f, %f",
+             cam0_distortion_coeffs[0], cam0_distortion_coeffs[1], cam0_distortion_coeffs[2], cam0_distortion_coeffs[3]);
 
-  ROS_INFO("cam1_resolution: %d, %d", cam1_resolution[0], cam1_resolution[1]);
-  ROS_INFO("cam1_intrinscs: %f, %f, %f, %f",
-          cam1_intrinsics[0], cam1_intrinsics[1], cam1_intrinsics[2], cam1_intrinsics[3]);
-  ROS_INFO("cam1_distortion_model: %s", cam1_distortion_model.c_str());
-  ROS_INFO("cam1_distortion_coefficients: %f, %f, %f, %f",
-      cam1_distortion_coeffs[0], cam1_distortion_coeffs[1], cam1_distortion_coeffs[2], cam1_distortion_coeffs[3]);
+    ROS_INFO("cam1_resolution: %d, %d", cam1_resolution[0], cam1_resolution[1]);
+    ROS_INFO("cam1_intrinscs: %f, %f, %f, %f",
+             cam1_intrinsics[0], cam1_intrinsics[1], cam1_intrinsics[2], cam1_intrinsics[3]);
+    ROS_INFO("cam1_distortion_model: %s", cam1_distortion_model.c_str());
+    ROS_INFO("cam1_distortion_coefficients: %f, %f, %f, %f",
+             cam1_distortion_coeffs[0], cam1_distortion_coeffs[1], cam1_distortion_coeffs[2], cam1_distortion_coeffs[3]);
 
-  cout << R_imu_cam0 << endl;
-  cout << t_imu_cam0.t() << endl;
+    cout << R_imu_cam0 << endl;
+    cout << t_imu_cam0.t() << endl;
 
-  ROS_INFO("grid_row: %d", processor_config.grid_row);
-  ROS_INFO("grid_col: %d", processor_config.grid_col);
-  ROS_INFO("grid_min_feature_num: %d", processor_config.grid_min_feature_num);
-  ROS_INFO("grid_max_feature_num: %d", processor_config.grid_max_feature_num);
-  ROS_INFO("pyramid_levels: %d", processor_config.pyramid_levels);
-  ROS_INFO("patch_size: %d", processor_config.patch_size);
-  ROS_INFO("fast_threshold: %d", processor_config.fast_threshold);
-  ROS_INFO("max_iteration: %d", processor_config.max_iteration);
-  ROS_INFO("track_precision: %f", processor_config.track_precision);
-  ROS_INFO("ransac_threshold: %f", processor_config.ransac_threshold);
-  ROS_INFO("stereo_threshold: %f", processor_config.stereo_threshold);
+    ROS_INFO("grid_row: %d", processor_config.grid_row);
+    ROS_INFO("grid_col: %d", processor_config.grid_col);
+    ROS_INFO("grid_min_feature_num: %d", processor_config.grid_min_feature_num);
+    ROS_INFO("grid_max_feature_num: %d", processor_config.grid_max_feature_num);
+    ROS_INFO("pyramid_levels: %d", processor_config.pyramid_levels);
+    ROS_INFO("patch_size: %d", processor_config.patch_size);
+    ROS_INFO("fast_threshold: %d", processor_config.fast_threshold);
+    ROS_INFO("max_iteration: %d", processor_config.max_iteration);
+    ROS_INFO("track_precision: %f", processor_config.track_precision);
+    ROS_INFO("ransac_threshold: %f", processor_config.ransac_threshold);
+    ROS_INFO("stereo_threshold: %f", processor_config.stereo_threshold);
 
-  std::cout << "T_imu_cam0:\n" << T_imu_cam0 << std::endl;
-  std::cout << "T_cam0_cam1:\n" << T_cam0_cam1 << std::endl;
-  std::cout << "R_cam1_imu:\n" << R_cam1_imu << std::endl;
-  std::cout << "t_cam1_imu:\n" << t_cam1_imu << std::endl;
+    std::cout << "T_imu_cam0:\n"  << T_imu_cam0  << std::endl;
+    std::cout << "T_cam0_cam1:\n" << T_cam0_cam1 << std::endl;
+    std::cout << "R_cam1_imu:\n" << R_cam1_imu << std::endl;
+    std::cout << "t_cam1_imu:\n" << t_cam1_imu << std::endl;
 
-  ROS_INFO("ImageProcessor end ===========================================");
+    ROS_INFO("ImageProcessor end ===========================================");
 
-  return true;
+    return true;
 }
 
 bool ImageProcessor::createRosIO() {
-  feature_pub = nh.advertise<CameraMeasurement>("features", 3);
-  tracking_info_pub = nh.advertise<TrackingInfo>("tracking_info", 1);
-  image_transport::ImageTransport it(nh);
-  debug_stereo_pub = it.advertise("debug_stereo_image", 1);
+    feature_pub = nh.advertise<CameraMeasurement>("features", 3);
+    tracking_info_pub = nh.advertise<TrackingInfo>("tracking_info", 1);
+    image_transport::ImageTransport it(nh);
+    debug_stereo_pub = it.advertise("debug_stereo_image", 1);
 
-  cam0_img_sub.subscribe(nh, "cam0_image", 10);
-  cam1_img_sub.subscribe(nh, "cam1_image", 10);
-  stereo_sub.connectInput(cam0_img_sub, cam1_img_sub);
-  stereo_sub.registerCallback(&ImageProcessor::stereoCallback, this);
-  imu_sub = nh.subscribe("imu", 50, &ImageProcessor::imuCallback, this);
+    cam0_img_sub.subscribe(nh, "cam0_image", 10);
+    cam1_img_sub.subscribe(nh, "cam1_image", 10);
+    stereo_sub.connectInput(cam0_img_sub, cam1_img_sub);
+    stereo_sub.registerCallback(&ImageProcessor::stereoCallback, this);
+    imu_sub = nh.subscribe("imu", 50, &ImageProcessor::imuCallback, this);
 
-  return true;
+    return true;
 }
 
 bool ImageProcessor::initialize() {
-  if (!loadParameters())
-      return false;
-  ROS_INFO("Finish loading ROS parameters...");
+    if (!loadParameters())
+        return false;
+    ROS_INFO("Finish loading ROS parameters...");
 
-  // Create feature detector.
-  detector_ptr = FastFeatureDetector::create(processor_config.fast_threshold);
+    // Create feature detector.
+    detector_ptr = FastFeatureDetector::create(processor_config.fast_threshold);
 
-  if (!createRosIO())
-      return false;
-  ROS_INFO("Finish creating ROS IO...");
+    if (!createRosIO()) return false;
 
-  return true;
+    ROS_INFO("Finish creating ROS IO...");
+
+    return true;
 }
 
 void ImageProcessor::stereoCallback(
-    const sensor_msgs::ImageConstPtr& cam0_img,
-    const sensor_msgs::ImageConstPtr& cam1_img) {
-
+    const sensor_msgs::ImageConstPtr &cam0_img,
+    const sensor_msgs::ImageConstPtr &cam1_img) {
     // Get the current image.
     cam0_curr_img_ptr = cv_bridge::toCvShare(cam0_img, sensor_msgs::image_encodings::MONO8);
     cam1_curr_img_ptr = cv_bridge::toCvShare(cam1_img, sensor_msgs::image_encodings::MONO8);
@@ -224,9 +224,11 @@ void ImageProcessor::stereoCallback(
         //ROS_INFO("Draw features: %f", (ros::Time::now()-start_time).toSec());
     }
 
-    //ros::Time start_time = ros::Time::now();
-    //updateFeatureLifetime();
-    //ROS_INFO("Statistics: %f", (ros::Time::now()-start_time).toSec());
+#if WITH_LIFETIME_STATISTICS
+    ros::Time start_time = ros::Time::now();
+    updateFeatureLifetime();
+    ROS_INFO("Statistics: %f", (ros::Time::now()-start_time).toSec());
+#endif    
 
     // Publish features in the current image.
     ros::Time start_time = ros::Time::now();
@@ -247,7 +249,7 @@ void ImageProcessor::stereoCallback(
     return;
 }
 
-void ImageProcessor::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
+void ImageProcessor::imuCallback(const sensor_msgs::ImuConstPtr &msg) {
     // Wait for the first image to be set.
     if (is_first_img)
         return;
@@ -256,26 +258,26 @@ void ImageProcessor::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 }
 
 void ImageProcessor::createImagePyramids() {
-  const Mat& curr_cam0_img = cam0_curr_img_ptr->image;
-  buildOpticalFlowPyramid(
-      curr_cam0_img, curr_cam0_pyramid_,
-      Size(processor_config.patch_size, processor_config.patch_size),
-      processor_config.pyramid_levels, true, BORDER_REFLECT_101,
-      BORDER_CONSTANT, false);
+    const Mat &curr_cam0_img = cam0_curr_img_ptr->image;
+    buildOpticalFlowPyramid(
+        curr_cam0_img, curr_cam0_pyramid_,
+        Size(processor_config.patch_size, processor_config.patch_size),
+        processor_config.pyramid_levels, true, BORDER_REFLECT_101,
+        BORDER_CONSTANT, false);
 
-  const Mat& curr_cam1_img = cam1_curr_img_ptr->image;
-  buildOpticalFlowPyramid(
-      curr_cam1_img, curr_cam1_pyramid_,
-      Size(processor_config.patch_size, processor_config.patch_size),
-      processor_config.pyramid_levels, true, BORDER_REFLECT_101,
-      BORDER_CONSTANT, false);
+    const Mat &curr_cam1_img = cam1_curr_img_ptr->image;
+    buildOpticalFlowPyramid(
+        curr_cam1_img, curr_cam1_pyramid_,
+        Size(processor_config.patch_size, processor_config.patch_size),
+        processor_config.pyramid_levels, true, BORDER_REFLECT_101,
+        BORDER_CONSTANT, false);
 }
 
 void ImageProcessor::initializeFirstFrame() {
     // Size of each grid.
     const Mat &img = cam0_curr_img_ptr->image;
     static int grid_height = img.rows / processor_config.grid_row;
-    static int grid_width  = img.cols / processor_config.grid_col;
+    static int grid_width = img.cols / processor_config.grid_col;
 
     // Detect new features on the frist image.
     vector<KeyPoint> new_features(0);
@@ -342,11 +344,10 @@ void ImageProcessor::initializeFirstFrame() {
 }
 
 void ImageProcessor::predictFeatureTracking(
-    const vector<cv::Point2f>& input_pts,
-    const cv::Matx33f& R_p_c,
-    const cv::Vec4d& intrinsics,
-    vector<cv::Point2f>& compensated_pts) {
-
+    const vector<cv::Point2f> &input_pts,
+    const cv::Matx33f &R_p_c,
+    const cv::Vec4d &intrinsics,
+    vector<cv::Point2f> &compensated_pts) {
     // Return directly if there are no input features.
     if (input_pts.size() == 0) {
         compensated_pts.clear();
@@ -356,10 +357,10 @@ void ImageProcessor::predictFeatureTracking(
 
     // Intrinsic matrix.
     cv::Matx33f K(
-            intrinsics[0], 0.0, intrinsics[2],
-            0.0, intrinsics[1], intrinsics[3],
-            0.0, 0.0, 1.0);
-    cv::Matx33f H = K * R_p_c * K.inv(); // p' = K * Rcp * K-1 * p
+        intrinsics[0], 0.0, intrinsics[2],
+        0.0, intrinsics[1], intrinsics[3],
+        0.0, 0.0, 1.0);
+    cv::Matx33f H = K * R_p_c * K.inv();  // p' = K * Rcp * K-1 * p
 
     for (int i = 0; i < input_pts.size(); ++i) {
         cv::Vec3f p1(input_pts[i].x, input_pts[i].y, 1.0f);
@@ -374,7 +375,7 @@ void ImageProcessor::predictFeatureTracking(
 void ImageProcessor::trackFeatures() {
     // Size of each grid.
     static int grid_height = cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-    static int grid_width  = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+    static int grid_width = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
     // Compute a rough relative rotation which takes a vector from the previous frame to the current frame.
     Matx33f cam0_R_p_c;
@@ -412,14 +413,14 @@ void ImageProcessor::trackFeatures() {
 
     // 根据图像金字塔跟踪两帧间的特征点，跟踪失败的会将标志位track_inliers设为0，该函数需要设置第二帧图像中特征点坐标的初始值
     calcOpticalFlowPyrLK(
-            prev_cam0_pyramid_, curr_cam0_pyramid_,
-            prev_cam0_points, curr_cam0_points,
-            track_inliers, noArray(),
-            Size(processor_config.patch_size, processor_config.patch_size),
-            processor_config.pyramid_levels,
-            TermCriteria(TermCriteria::COUNT + TermCriteria::EPS,
-                         processor_config.max_iteration, processor_config.track_precision),
-            cv::OPTFLOW_USE_INITIAL_FLOW);
+        prev_cam0_pyramid_, curr_cam0_pyramid_,
+        prev_cam0_points, curr_cam0_points,
+        track_inliers, noArray(),
+        Size(processor_config.patch_size, processor_config.patch_size),
+        processor_config.pyramid_levels,
+        TermCriteria(TermCriteria::COUNT + TermCriteria::EPS,
+                     processor_config.max_iteration, processor_config.track_precision),
+        cv::OPTFLOW_USE_INITIAL_FLOW);
 
     // Mark those tracked points out of the image region as untracked.
     for (int i = 0; i < curr_cam0_points.size(); ++i) {
@@ -528,26 +529,19 @@ void ImageProcessor::trackFeatures() {
     for (const auto &item : *curr_features_ptr)
         curr_feature_num += item.second.size();
 
-    ROS_INFO_THROTTLE(0.5,
-                      "\033[0;32m candidates: %d; track: %d; match: %d; ransac: %d/%d=%f\033[0m",
-                      before_tracking, after_tracking, after_matching,
-                      curr_feature_num, prev_feature_num,
-                      static_cast<double>(curr_feature_num) /
-                      (static_cast<double>(prev_feature_num) + 1e-5));
-    //printf(
-    //    "\033[0;32m candidates: %d; raw track: %d; stereo match: %d; ransac: %d/%d=%f\033[0m\n",
-    //    before_tracking, after_tracking, after_matching,
-    //    curr_feature_num, prev_feature_num,
-    //    static_cast<double>(curr_feature_num)/
-    //    (static_cast<double>(prev_feature_num)+1e-5));
+    printf(
+       "\033[0;32m candidates: %d; raw track: %d; stereo match: %d; ransac: %d/%d=%f\033[0m\n",
+       before_tracking, after_tracking, after_matching,
+       curr_feature_num, prev_feature_num,
+       static_cast<double>(curr_feature_num)/
+       (static_cast<double>(prev_feature_num)+1e-5));
 
     return;
 }
 
 void ImageProcessor::stereoMatch(
-        const vector<cv::Point2f>& cam0_points, vector<cv::Point2f>& cam1_points,
-        vector<unsigned char>& inlier_markers) {
-
+    const vector<cv::Point2f> &cam0_points, vector<cv::Point2f> &cam1_points,
+    vector<unsigned char> &inlier_markers) {
     if (cam0_points.size() == 0)
         return;
 
@@ -584,9 +578,9 @@ void ImageProcessor::stereoMatch(
     const cv::Vec3d t_cam0_cam1 = R_cam1_imu.t() * (t_cam0_imu - t_cam1_imu);
     // Compute the essential matrix.
     const cv::Matx33d t_cam0_cam1_hat(
-            0.0, -t_cam0_cam1[2], t_cam0_cam1[1],
-            t_cam0_cam1[2], 0.0, -t_cam0_cam1[0],
-            -t_cam0_cam1[1], t_cam0_cam1[0], 0.0);
+        0.0, -t_cam0_cam1[2], t_cam0_cam1[1],
+        t_cam0_cam1[2], 0.0, -t_cam0_cam1[0],
+        -t_cam0_cam1[1], t_cam0_cam1[0], 0.0);
     const cv::Matx33d E = t_cam0_cam1_hat * R_cam0_cam1;
 
     // 转为 cam1 归一化平面坐标
@@ -619,7 +613,7 @@ void ImageProcessor::addNewFeatures() {
 
     // Size of each grid.
     static int grid_height = cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-    static int grid_width  = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+    static int grid_width = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
     // Create a mask to avoid redetecting existing features.
     Mat mask(curr_img.rows, curr_img.cols, CV_8U, Scalar(1));
@@ -734,8 +728,8 @@ void ImageProcessor::addNewFeatures() {
         }
     }
 
-    //printf("\033[0;33m detected: %d; matched: %d; new added feature: %d\033[0m\n",
-    //    detected_new_features, matched_new_features, new_added_feature_num);
+    printf("\033[0;33m detected: %d; matched: %d; new added feature: %d\033[0m\n",
+       detected_new_features, matched_new_features, new_added_feature_num);
 
     return;
 }
@@ -753,25 +747,24 @@ void ImageProcessor::pruneGridFeatures() {
 }
 
 void ImageProcessor::undistortPoints(
-    const vector<cv::Point2f>& pts_in,
-    const cv::Vec4d& intrinsics,
-    const string& distortion_model,
-    const cv::Vec4d& distortion_coeffs,
-    vector<cv::Point2f>& pts_out,
+    const vector<cv::Point2f> &pts_in,
+    const cv::Vec4d &intrinsics,
+    const string &distortion_model,
+    const cv::Vec4d &distortion_coeffs,
+    vector<cv::Point2f> &pts_out,
     const cv::Matx33d &rectification_matrix,
     const cv::Vec4d &new_intrinsics) {
-
     if (pts_in.size() == 0) return;
 
     const cv::Matx33d K(
-            intrinsics[0], 0.0, intrinsics[2],
-            0.0, intrinsics[1], intrinsics[3],
-            0.0, 0.0, 1.0);
+        intrinsics[0], 0.0, intrinsics[2],
+        0.0, intrinsics[1], intrinsics[3],
+        0.0, 0.0, 1.0);
 
     const cv::Matx33d K_new(
-            new_intrinsics[0], 0.0, new_intrinsics[2],
-            0.0, new_intrinsics[1], new_intrinsics[3],
-            0.0, 0.0, 1.0);
+        new_intrinsics[0], 0.0, new_intrinsics[2],
+        0.0, new_intrinsics[1], new_intrinsics[3],
+        0.0, 0.0, 1.0);
 
     if (distortion_model == "radtan") {
         cv::undistortPoints(pts_in, pts_out, K, distortion_coeffs, rectification_matrix, K_new);
@@ -786,11 +779,10 @@ void ImageProcessor::undistortPoints(
 }
 
 vector<cv::Point2f> ImageProcessor::distortPoints(
-    const vector<cv::Point2f>& pts_in,
-    const cv::Vec4d& intrinsics,
-    const string& distortion_model,
-    const cv::Vec4d& distortion_coeffs) {
-
+    const vector<cv::Point2f> &pts_in,
+    const cv::Vec4d &intrinsics,
+    const string &distortion_model,
+    const cv::Vec4d &distortion_coeffs) {
     const cv::Matx33d K(intrinsics[0], 0.0, intrinsics[2],
                         0.0, intrinsics[1], intrinsics[3],
                         0.0, 0.0, 1.0);
@@ -812,7 +804,7 @@ vector<cv::Point2f> ImageProcessor::distortPoints(
     return pts_out;
 }
 
-void ImageProcessor::integrateImuData(Matx33f& cam0_R_p_c, Matx33f& cam1_R_p_c) {
+void ImageProcessor::integrateImuData(Matx33f &cam0_R_p_c, Matx33f &cam1_R_p_c) {
     // Find the start and the end limit within the imu msg buffer.
     auto begin_iter = imu_msg_buffer.begin();
     while (begin_iter != imu_msg_buffer.end()) {
@@ -835,8 +827,7 @@ void ImageProcessor::integrateImuData(Matx33f& cam0_R_p_c, Matx33f& cam1_R_p_c) 
     for (auto iter = begin_iter; iter < end_iter; ++iter)
         mean_ang_vel += Vec3f(iter->angular_velocity.x, iter->angular_velocity.y, iter->angular_velocity.z);
 
-    if (end_iter - begin_iter > 0)
-        mean_ang_vel *= 1.0f / (end_iter - begin_iter);
+    if (end_iter - begin_iter > 0) mean_ang_vel *= 1.0f / (end_iter - begin_iter);
 
     // Transform the mean angular velocity from the IMU frame to the cam0 and cam1 frames.
     Vec3f cam0_mean_ang_vel = R_cam0_imu.t() * mean_ang_vel;
@@ -854,7 +845,7 @@ void ImageProcessor::integrateImuData(Matx33f& cam0_R_p_c, Matx33f& cam1_R_p_c) 
     return;
 }
 
-void ImageProcessor::rescalePoints(vector<Point2f>& pts1, vector<Point2f>& pts2, float& scaling_factor) {
+void ImageProcessor::rescalePoints(vector<Point2f> &pts1, vector<Point2f> &pts2, float &scaling_factor) {
     scaling_factor = 0.0f;
 
     for (int i = 0; i < pts1.size(); ++i) {
@@ -873,14 +864,13 @@ void ImageProcessor::rescalePoints(vector<Point2f>& pts1, vector<Point2f>& pts2,
 }
 
 void ImageProcessor::twoPointRansac(
-    const vector<Point2f>& pts1, const vector<Point2f>& pts2,
-    const cv::Matx33f& R_p_c, const cv::Vec4d& intrinsics,
-    const std::string& distortion_model,
-    const cv::Vec4d& distortion_coeffs,
-    const double& inlier_error,
-    const double& success_probability,
-    vector<int>& inlier_markers) {
-
+    const vector<Point2f> &pts1, const vector<Point2f> &pts2,
+    const cv::Matx33f &R_p_c, const cv::Vec4d &intrinsics,
+    const std::string &distortion_model,
+    const cv::Vec4d &distortion_coeffs,
+    const double &inlier_error,
+    const double &success_probability,
+    vector<int> &inlier_markers) {
     // Check the size of input point size.
     if (pts1.size() != pts2.size())
         ROS_ERROR("Sets of different size (%lu and %lu) are used...", pts1.size(), pts2.size());
@@ -984,9 +974,7 @@ void ImageProcessor::twoPointRansac(
         int select_idx1 = random_gen.uniformInteger(0, raw_inlier_idx.size() - 1);
         int select_idx_diff = random_gen.uniformInteger(1, raw_inlier_idx.size() - 1);
         int select_idx2 =
-                select_idx1 + select_idx_diff < raw_inlier_idx.size() ?
-                select_idx1 + select_idx_diff :
-                select_idx1 + select_idx_diff - raw_inlier_idx.size();
+            select_idx1 + select_idx_diff < raw_inlier_idx.size() ? select_idx1 + select_idx_diff : select_idx1 + select_idx_diff - raw_inlier_idx.size();
 
         int pair_idx1 = raw_inlier_idx[select_idx1];
         int pair_idx2 = raw_inlier_idx[select_idx2];
@@ -1096,7 +1084,7 @@ void ImageProcessor::twoPointRansac(
     for (const auto &inlier_idx : best_inlier_set)
         inlier_markers[inlier_idx] = 1;
 
-    //printf("inlier ratio: %lu/%lu\n", best_inlier_set.size(), inlier_markers.size());
+    printf("inlier ratio: %lu/%lu\n", best_inlier_set.size(), inlier_markers.size());
 
     return;
 }
@@ -1132,7 +1120,7 @@ void ImageProcessor::publish() {
         feature_msg_ptr->features[i].v1 = curr_cam1_points_undistorted[i].y;
     }
 
-    feature_pub.publish(feature_msg_ptr); // cam0和cam1 特征点 归一化平面坐标
+    feature_pub.publish(feature_msg_ptr);  // cam0和cam1 特征点 归一化平面坐标
 
     // Publish tracking info.
     TrackingInfoPtr tracking_info_msg_ptr(new TrackingInfo());
@@ -1152,7 +1140,7 @@ void ImageProcessor::drawFeaturesMono() {
     Scalar new_feature(0, 255, 255);
 
     static int grid_height = cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-    static int grid_width  = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+    static int grid_width = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
     // Create an output image.
     int img_height = cam0_curr_img_ptr->image.rows;
@@ -1214,14 +1202,13 @@ void ImageProcessor::drawFeaturesMono() {
 }
 
 void ImageProcessor::drawFeaturesStereo() {
-
     if (debug_stereo_pub.getNumSubscribers() > 0) {
         // Colors for different features.
         Scalar tracked(0, 255, 0);
         Scalar new_feature(0, 255, 255);
 
         static int grid_height = cam0_curr_img_ptr->image.rows / processor_config.grid_row;
-        static int grid_width  = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
+        static int grid_width = cam0_curr_img_ptr->image.cols / processor_config.grid_col;
 
         // Create an output image.
         int img_height = cam0_curr_img_ptr->image.rows;
@@ -1310,33 +1297,35 @@ void ImageProcessor::drawFeaturesStereo() {
     return;
 }
 
+#if WITH_LIFETIME_STATISTICS
 void ImageProcessor::updateFeatureLifetime() {
-  for (int code = 0; code < processor_config.grid_row*processor_config.grid_col; ++code) {
-    vector<FeatureMetaData>& features = (*curr_features_ptr)[code];
-    for (const auto& feature : features) {
-      if (feature_lifetime.find(feature.id) == feature_lifetime.end())
-        feature_lifetime[feature.id] = 1;
-      else
-        ++feature_lifetime[feature.id];
+    for (int code = 0; code < processor_config.grid_row * processor_config.grid_col; ++code) {
+        vector<FeatureMetaData> &features = (*curr_features_ptr)[code];
+        for (const auto &feature : features) {
+            if (feature_lifetime.find(feature.id) == feature_lifetime.end())
+                feature_lifetime[feature.id] = 1;
+            else
+                ++feature_lifetime[feature.id];
+        }
     }
-  }
 
-  return;
+    return;
 }
 
 void ImageProcessor::featureLifetimeStatistics() {
-  map<int, int> lifetime_statistics;
-  for (const auto& data : feature_lifetime) {
-    if (lifetime_statistics.find(data.second) == lifetime_statistics.end())
-      lifetime_statistics[data.second] = 1;
-    else
-      ++lifetime_statistics[data.second];
-  }
+    map<int, int> lifetime_statistics;
+    for (const auto &data : feature_lifetime) {
+        if (lifetime_statistics.find(data.second) == lifetime_statistics.end())
+            lifetime_statistics[data.second] = 1;
+        else
+            ++lifetime_statistics[data.second];
+    }
 
-  for (const auto& data : lifetime_statistics)
-    cout << data.first << " : " << data.second << endl;
+    for (const auto &data : lifetime_statistics)
+        cout << data.first << " : " << data.second << endl;
 
-  return;
+    return;
 }
+#endif
 
-} // end namespace msckf_vio
+}  // end namespace msckf_vio

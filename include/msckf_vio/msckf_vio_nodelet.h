@@ -8,21 +8,20 @@
 #ifndef MSCKF_VIO_NODELET_H
 #define MSCKF_VIO_NODELET_H
 
+#include <msckf_vio/msckf_vio.h>
 #include <nodelet/nodelet.h>
 #include <pluginlib/class_list_macros.h>
-#include <msckf_vio/msckf_vio.h>
 
 namespace msckf_vio {
 class MsckfVioNodelet : public nodelet::Nodelet {
-public:
-  MsckfVioNodelet() { return; }
-  ~MsckfVioNodelet() { return; }
+   public:
+    MsckfVioNodelet() { return; }
+    ~MsckfVioNodelet() { return; }
 
-private:
-  virtual void onInit();
-  MsckfVioPtr msckf_vio_ptr;
+   private:
+    virtual void onInit();
+    MsckfVioPtr msckf_vio_ptr;
 };
-} // end namespace msckf_vio
+}  // end namespace msckf_vio
 
 #endif
-

@@ -8,17 +8,16 @@
 #include <msckf_vio/image_processor_nodelet.h>
 
 namespace msckf_vio {
+
 void ImageProcessorNodelet::onInit() {
-  img_processor_ptr.reset(new ImageProcessor(getPrivateNodeHandle()));
-  if (!img_processor_ptr->initialize()) {
-    ROS_ERROR("Cannot initialize Image Processor...");
+    img_processor_ptr.reset(new ImageProcessor(getPrivateNodeHandle()));
+    if (!img_processor_ptr->initialize()) {
+        ROS_ERROR("Cannot initialize Image Processor...");
+        return;
+    }
     return;
-  }
-  return;
 }
 
-PLUGINLIB_EXPORT_CLASS(msckf_vio::ImageProcessorNodelet,
-    nodelet::Nodelet);
+PLUGINLIB_EXPORT_CLASS(msckf_vio::ImageProcessorNodelet, nodelet::Nodelet);
 
-} // end namespace msckf_vio
-
+}  // end namespace msckf_vio

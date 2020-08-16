@@ -17,8 +17,7 @@
 #include <Eigen/StdVector>
 
 #include "math_utils.hpp"
-#include "imu_state.h"
-#include "cam_state.h"
+#include "state.h"
 
 namespace msckf_vio {
 

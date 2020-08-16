@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 2.8.12) 
 project(msckf_vio)
 
 set(CMAKE_BUILD_TYPE "Release")
@@ -30,7 +30,6 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-find_package(Boost REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(SuiteSparse REQUIRED)
@@ -62,7 +61,7 @@ catkin_package(
     eigen_conversions tf_conversions random_numbers message_runtime
     image_transport cv_bridge message_filters pcl_conversions
     pcl_ros std_srvs
-  DEPENDS Boost EIGEN3 OpenCV SUITESPARSE
+  DEPENDS EIGEN3 OpenCV SUITESPARSE
 )
 
 ###########
