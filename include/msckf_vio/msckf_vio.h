@@ -153,6 +153,10 @@ namespace msckf_vio {
          */
         void addFeatureObservations(const CameraMeasurementConstPtr &msg);
 
+        void nullspace_project_inplace(Eigen::MatrixXd &H_f, Eigen::MatrixXd &H_x, Eigen::VectorXd &res);
+
+        void measurement_compress_inplace(Eigen::MatrixXd &H_x, Eigen::VectorXd &res);
+
         // This function is used to compute the measurement Jacobian for a single feature observed at a single camera frame.
         void measurementJacobian(const StateIDType &cam_state_id, const FeatureIDType &feature_id,
                                  Eigen::Matrix<double, 4, 6> &H_x, Eigen::Matrix<double, 4, 3> &H_f, Eigen::Vector4d &r);

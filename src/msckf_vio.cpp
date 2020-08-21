@@ -29,10 +29,16 @@
 #include <msckf_vio/math_utils.hpp>
 #include <msckf_vio/utils.h>
 
+#include "msckf_vio/logging.h"
+#include "msckf_vio/tic_toc.h"
+
 using namespace std;
 using namespace Eigen;
 
-#define WITH_SPQR 1
+#define WITH_SPQR 0
+#define WITH_HHQR 0
+#define WITH_GIVENS_QR 1
+
 #define DEBUG_IMG_J 0
 
 namespace msckf_vio{
@@ -803,14 +809,81 @@ void MsckfVio::featureJacobian(
     // }
 #endif
 
+#if WITH_GIVENS_QR
+    nullspace_project_inplace(H_fj, H_xj, r_j);
+    H_x = H_xj;
+    r = r_j;
+#else    
     // Project the residual and Jacobians onto the nullspace of H_fj.
     JacobiSVD<MatrixXd> svd_helper(H_fj, ComputeFullU | ComputeThinV);
     MatrixXd A = svd_helper.matrixU().rightCols(jacobian_row_size - 3);
-
     H_x = A.transpose() * H_xj;
     r   = A.transpose() * r_j;
+#endif    
 
     return;
+}
+
+void MsckfVio::nullspace_project_inplace(Eigen::MatrixXd &H_f, Eigen::MatrixXd &H_x, Eigen::VectorXd &res) {
+
+    // Apply the left nullspace of H_f to all variables
+    // Based on "Matrix Computations 4th Edition by Golub and Van Loan"
+    // See page 252, Algorithm 5.2.4 for how these two loops work
+    // They use "matlab" index notation, thus we need to subtract 1 from all index
+    Eigen::JacobiRotation<double> tempHo_GR;
+    for (int n = 0; n < H_f.cols(); ++n) {
+        for (int m = (int) H_f.rows() - 1; m > n; m--) {
+            // Givens matrix G
+            tempHo_GR.makeGivens(H_f(m - 1, n), H_f(m, n));
+            // Multiply G to the corresponding lines (m-1,m) in each matrix
+            // Note: we only apply G to the nonzero cols [n:Ho.cols()-n-1], while
+            //       it is equivalent to applying G to the entire cols [0:Ho.cols()-1].
+            (H_f.block(m - 1, n, 2, H_f.cols() - n)).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
+            (H_x.block(m - 1, 0, 2, H_x.cols())).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
+            (res.block(m - 1, 0, 2, 1)).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
+        }
+    }
+
+    // The H_f jacobian max rank is 3 if it is a 3d position, thus size of the left nullspace is Hf.rows()-3
+    // NOTE: need to eigen3 eval here since this experiences aliasing!
+    //H_f = H_f.block(H_f.cols(),0,H_f.rows()-H_f.cols(),H_f.cols()).eval();
+    H_x = H_x.block(H_f.cols(),0,H_x.rows()-H_f.cols(),H_x.cols()).eval();
+    res = res.block(H_f.cols(),0,res.rows()-H_f.cols(),res.cols()).eval();
+
+    // Sanity check
+    assert(H_x.rows()==res.rows());
+}
+
+void MsckfVio::measurement_compress_inplace(Eigen::MatrixXd &H_x, Eigen::VectorXd &res) {
+    // Return if H_x is a fat matrix (there is no need to compress in this case)
+    if(H_x.rows() <= H_x.cols())
+        return;
+
+    // Do measurement compression through givens rotations
+    // Based on "Matrix Computations 4th Edition by Golub and Van Loan"
+    // See page 252, Algorithm 5.2.4 for how these two loops work
+    // They use "matlab" index notation, thus we need to subtract 1 from all index
+    Eigen::JacobiRotation<double> tempHo_GR;
+    for (int n=0; n<H_x.cols(); n++) {
+        for (int m=(int)H_x.rows()-1; m>n; m--) {
+            // Givens matrix G
+            tempHo_GR.makeGivens(H_x(m-1,n), H_x(m,n));
+            // Multiply G to the corresponding lines (m-1,m) in each matrix
+            // Note: we only apply G to the nonzero cols [n:Ho.cols()-n-1], while
+            //       it is equivalent to applying G to the entire cols [0:Ho.cols()-1].
+            (H_x.block(m-1,n,2,H_x.cols()-n)).applyOnTheLeft(0,1,tempHo_GR.adjoint());
+            (res.block(m-1,0,2,1)).applyOnTheLeft(0,1,tempHo_GR.adjoint());
+        }
+    }
+
+    // If H is a fat matrix, then use the rows
+    // Else it should be same size as our state
+    int r = std::min(H_x.rows(),H_x.cols());
+
+    // Construct the smaller jacobian and residual after measurement compression
+    assert(r<=H_x.rows());
+    H_x.conservativeResize(r, H_x.cols());
+    res.conservativeResize(r, res.cols());
 }
 
 void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
@@ -824,8 +897,8 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
     // HouseholderQR 处理时间是 SPQR 的 6-7 倍
     // HouseholderQR 处理时间是 FullPivHouseholderQR 的 1.5-2.5 倍
     if (H.rows() > H.cols()) {
-
-#ifdef WITH_SPQR
+#if WITH_SPQR
+        TicToc t_spqr;
         SparseMatrix<double> H_sparse = H.sparseView(); // Convert H to a sparse matrix.
         SPQR<SparseMatrix<double> > spqr_helper;
         spqr_helper.setSPQROrdering(SPQR_ORDERING_NATURAL);
@@ -838,9 +911,11 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
         H_thin = H_temp.topRows(21 + state_server.cam_states.size() * 6);
         r_thin = r_temp.head(21 + state_server.cam_states.size() * 6);
+        LOGI("[cggos %s] t_spqr: %f ms\n", __FUNCTION__, t_spqr.toc());
 #endif
 
-#ifdef WITH_HHQR
+#if WITH_HHQR
+        TicToc t_hhqr;
         Eigen::HouseholderQR<MatrixXd> qr_helper(H);
         MatrixXd Q = qr_helper.householderQ();
         // Eigen::FullPivHouseholderQR<Eigen::MatrixXd> fphqr_helper = H.fullPivHouseholderQr();
@@ -848,6 +923,15 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
         MatrixXd Q1 = Q.leftCols(21+state_server.cam_states.size()*6);
         H_thin = Q1.transpose() * H;
         r_thin = Q1.transpose() * r;
+        LOGI("[cggos %s] t_hhqr: %f ms\n", __FUNCTION__, t_hhqr.toc());
+#endif
+
+#if WITH_GIVENS_QR
+        TicToc t_givens;
+        H_thin = H;
+        r_thin = r;
+        measurement_compress_inplace(H_thin, r_thin);
+        LOGI("[cggos %s] t_givens: %f ms\n", __FUNCTION__, t_givens.toc());
 #endif
     } else {
         H_thin = H;
