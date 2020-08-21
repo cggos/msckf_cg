@@ -794,21 +794,6 @@ void MsckfVio::featureJacobian(
         stack_cntr += 4;
     }
 
-#if DEBUG_IMG_J
-    // if(stack_cntr > 0) {
-    //     cv::Mat Jhx(H_xj.rows(), H_xj.cols(), CV_8UC1);
-    //     for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
-    //         double val = H_xj(h, w);
-    //         Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
-    //     }
-    //     static int idx = 0;
-    //     char path[255];
-    //     sprintf(path, "/home/cg/tmp/msckf/img_fj/%05d_%03d_%03d.png", idx, H_xj.rows(), H_xj.cols());
-    //     cv::imwrite(path, Jhx);
-    //     idx++;
-    // }
-#endif
-
 #if WITH_GIVENS_QR
     nullspace_project_inplace(H_fj, H_xj, r_j);
     H_x = H_xj;
@@ -998,36 +983,20 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
 #if DEBUG_IMG_J
     if(H.rows() > 10 && H.cols() > 10) {
-        static int idx = 0;
-
         cv::Mat Jhx(H.rows(), H.cols(), CV_8UC1);
         for(int h=0; h<Jhx.rows; h++) for(int w=0; w<Jhx.cols; w++) {
             double val = H(h, w);
             Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
         }
-        char path01[255];
-        sprintf(path01, "/home/cg/tmp/msckf/img/%05d_01_%03d_%03d.png", idx, H.rows(), H.cols());
-        cv::imwrite(path01, Jhx);
-
         cv::Mat Jhthin(H_thin.rows(), H_thin.cols(), CV_8UC1);
         for(int h=0; h<Jhthin.rows; h++) for(int w=0; w<Jhthin.cols; w++) {
             double val = H_thin(h, w);
             Jhthin.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
         }
-        char path02[255];
-        sprintf(path02, "/home/cg/tmp/msckf/img/%05d_02_%03d_%03d.png", idx, H_thin.rows(), H_thin.cols());
-        cv::imwrite(path02, Jhthin);
-
-        cv::Mat JP(state_server.state_cov.rows(), state_server.state_cov.cols(), CV_8UC1);
-        for(int h=0; h<JP.rows; h++) for(int w=0; w<JP.cols; w++) {
-            double val = state_server.state_cov(h, w);
-            JP.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
-        }
-        char path03[255];
-        sprintf(path03, "/home/cg/tmp/msckf/img/%05d_03_%03d_%03d.png", idx, state_server.state_cov.rows(), state_server.state_cov.cols());
-        cv::imwrite(path03, JP);
-
-        idx++;
+        cv::Mat mat_hx_hthin;
+        cv::vconcat(Jhx, Jhthin, mat_hx_hthin);
+        cv::imshow("mat_hx_hthin", mat_hx_hthin);
+        cv::waitKey(5);        
     }
 #endif
 
@@ -1138,12 +1107,6 @@ void MsckfVio::removeLostFeatures() {
             double val = H_x(h, w);
             Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
         }
-        static int idx = 0;
-        char path[255];
-        sprintf(path, "/home/cg/tmp/msckf/img01/%05d_%03d_%03d.png", idx, H_x.rows(), H_x.cols());
-        cv::imwrite(path, Jhx);
-        idx++;
-        // cv::threshold(Jhx, Jhx, 0, 255, cv::THRESH_BINARY);
         cv::imshow("mat_H01", Jhx);
         cv::waitKey(5);
     }
@@ -1286,12 +1249,6 @@ void MsckfVio::pruneCamStateBuffer() {
             double val = H_x(h, w);
             Jhx.at<uchar>(h, w) = std::abs(val)>DBL_MIN ? 255 : 0;
         }
-        static int idx = 0;
-        char path[255];
-        sprintf(path, "/home/cg/tmp/msckf/img02/%05d_%03d_%03d.png", idx, H_x.rows(), H_x.cols());
-        cv::imwrite(path, Jhx);
-        idx++;
-        // cv::threshold(Jhx, Jhx, 0, 255, cv::THRESH_BINARY);
         cv::imshow("mat_H02", Jhx);
         cv::waitKey(5);
     }
