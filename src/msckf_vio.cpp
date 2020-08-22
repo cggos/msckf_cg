@@ -794,14 +794,20 @@ void MsckfVio::featureJacobian(
         stack_cntr += 4;
     }
 
+    // Project the residual and Jacobians onto the nullspace of H_fj
 #if WITH_GIVENS_QR
     nullspace_project_inplace(H_fj, H_xj, r_j);
     H_x = H_xj;
     r = r_j;
-#else    
-    // Project the residual and Jacobians onto the nullspace of H_fj.
+#elif 1
     JacobiSVD<MatrixXd> svd_helper(H_fj, ComputeFullU | ComputeThinV);
     MatrixXd A = svd_helper.matrixU().rightCols(jacobian_row_size - 3);
+    H_x = A.transpose() * H_xj;
+    r   = A.transpose() * r_j;
+#else
+    Eigen::HouseholderQR<Eigen::MatrixXd> qr_helper(H_fj);
+    Eigen::MatrixXd Q = qr_helper.householderQ();
+    MatrixXd A = Q.rightCols(jacobian_row_size - 3);
     H_x = A.transpose() * H_xj;
     r   = A.transpose() * r_j;
 #endif    
@@ -881,6 +887,7 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
     // HouseholderQR 处理时间是 SPQR 的 6-7 倍
     // HouseholderQR 处理时间是 FullPivHouseholderQR 的 1.5-2.5 倍
+    // SPQR 处理时间是 Givens QR 的 4 倍 以上
     if (H.rows() > H.cols()) {
 #if WITH_SPQR
         TicToc t_spqr;
