@@ -31,6 +31,7 @@ catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
 
   roslaunch msckf_vio msckf_vio_euroc.launch [rviz:=true]
   ```
+  ![](images/msckf_vio_rosgraph.png)
 
 * Note
   - First obtain either the [EuRoC](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) or the [UPenn fast flight](https://github.com/KumarRobotics/msckf_vio/wiki/Dataset) dataset.
