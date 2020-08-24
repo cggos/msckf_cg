@@ -923,7 +923,7 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
         H_thin = H;
         r_thin = r;
         measurement_compress_inplace(H_thin, r_thin);
-        LOGI("[cggos %s] t_givens: %f ms\n", __FUNCTION__, t_givens.toc());
+        // LOGI("[cggos %s] t_givens: %f ms\n", __FUNCTION__, t_givens.toc());
 #endif
     } else {
         H_thin = H;
@@ -935,11 +935,26 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
     MatrixXd HP  = H_thin * P;
     MatrixXd HPH = HP * H_thin.transpose();
-    
-    MatrixXd S = HPH + Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
+
+    MatrixXd K;
+    MatrixXd R = Feature::observation_noise * MatrixXd::Identity(H_thin.rows(), H_thin.rows());
+    MatrixXd S(R.rows(), R.rows());
+#if 1
+    TicToc t_K01;
+    S = HPH + R;
     //MatrixXd K_transpose = S.fullPivHouseholderQr().solve(H_thin*P);
-    MatrixXd K_transpose = S.ldlt().solve(HP);
-    MatrixXd K = K_transpose.transpose();
+    MatrixXd K_transpose = S.llt().solve(HP);
+    K = K_transpose.transpose();
+    // LOGI("[cggos %s] t_K01: %f ms\n", __FUNCTION__, t_K01.toc());
+#else
+    TicToc t_K02;
+    S.triangularView<Eigen::Upper>() = HPH;
+    S.triangularView<Eigen::Upper>() += R;
+    Eigen::MatrixXd Sinv = Eigen::MatrixXd::Identity(R.rows(), R.rows());
+    S.selfadjointView<Eigen::Upper>().llt().solveInPlace(Sinv);
+    K = HP.transpose() * Sinv.selfadjointView<Eigen::Upper>();
+    LOGI("[cggos %s] t_K02: %f ms\n", __FUNCTION__, t_K02.toc());
+#endif    
 
     // Compute the error of the state.
     VectorXd delta_x = K * r_thin;
@@ -980,13 +995,25 @@ void MsckfVio::measurementUpdate(const MatrixXd& H, const VectorXd& r) {
 
     // Update state covariance.
     MatrixXd KHP = K * HP;
-    //state_server.state_cov = I_KH*state_server.state_cov*I_KH.transpose() +
-    //  K*K.transpose()*Feature::observation_noise;
+#if 0
+    //state_server.state_cov = I_KH*state_server.state_cov*I_KH.transpose() + K*K.transpose()*Feature::observation_noise;
     state_server.state_cov -=  KHP;
-
-    // Fix the covariance to be symmetric
     MatrixXd state_cov_fixed = (state_server.state_cov + state_server.state_cov.transpose()) / 2.0;
     state_server.state_cov = state_cov_fixed;
+#else
+    state_server.state_cov.triangularView<Eigen::Upper>() -= KHP;
+    state_server.state_cov = state_server.state_cov.selfadjointView<Eigen::Upper>();
+#endif
+    // We should check if we are not positive semi-definitate (i.e. negative diagionals is not s.p.d)
+    Eigen::VectorXd diags = state_server.state_cov.diagonal();
+    bool found_neg = false;
+    for(int i=0; i<diags.rows(); i++) {
+        if(diags(i) < 0.0) {
+            printf("[cggos %s] ERROR: diagonal at %d is %.2f\n", __FUNCTION__, i, diags(i));
+            found_neg = true;
+        }
+    }
+    assert(!found_neg);    
 
 #if DEBUG_IMG_J
     if(H.rows() > 10 && H.cols() > 10) {
