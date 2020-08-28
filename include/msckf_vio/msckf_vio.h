@@ -254,6 +254,29 @@ namespace msckf_vio {
         Eigen::Isometry3d mocap_initial_frame;
 
         std::ofstream pose_outfile_;
+
+#if WITH_LC
+    private:
+        std::unordered_map<size_t, FeatureLcPtr> featuresLCDB;
+        std::pair<StateIDType, CAMState> cam_state_margin;
+        bool is_start_loop = false;
+
+        void update_feature(Feature feat);
+
+        void update_keyframe_historical_information(const std::vector<FeatureLcPtr> &features);
+
+        void publish_keyframe_information();
+
+        ros::Publisher pub_poseimu, pub_keyframe_pose, pub_keyframe_point, pub_keyframe_extrinsic, pub_keyframe_intrinsics;
+
+        // Historical information of the filter (last marg time, historical states, features seen from all frames)
+        double hist_last_marginalized_time = -1;
+        std::map<double,Eigen::Matrix<double,7,1>> hist_stateinG;
+        std::unordered_map<size_t, Eigen::Vector3d> hist_feat_posinG;
+        std::unordered_map<size_t, std::unordered_map<size_t, std::vector<Eigen::Vector4d>>> hist_feat_uvs;
+        std::unordered_map<size_t, std::unordered_map<size_t, std::vector<Eigen::Vector4d>>> hist_feat_uvs_norm;
+        std::unordered_map<size_t, std::unordered_map<size_t, std::vector<double>>> hist_feat_timestamps;
+#endif        
     };
 
     typedef MsckfVio::Ptr MsckfVioPtr;

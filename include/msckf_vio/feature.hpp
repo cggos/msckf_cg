@@ -10,6 +10,7 @@
 
 #include <iostream>
 #include <map>
+#include <unordered_map>
 #include <vector>
 
 #include <Eigen/Dense>
@@ -20,6 +21,32 @@
 #include "state.h"
 
 namespace msckf_vio {
+
+#if WITH_LC
+    /**
+     * @brief Feature for loop closure
+     * 
+     */
+    class FeatureLC {
+    public:
+        /// Unique ID of this feature
+        size_t featid;
+
+        /// UV coordinates that this feature has been seen from (mapped by camera ID)
+        std::unordered_map<size_t, std::vector<Eigen::Vector4d>> uvs;
+
+        /// UV normalized coordinates that this feature has been seen from (mapped by camera ID)
+        std::unordered_map<size_t, std::vector<Eigen::Vector4d>> uvs_norm;
+
+        /// Timestamps of each UV measurement (mapped by camera ID)
+        std::unordered_map<size_t, std::vector<double>> timestamps;
+
+        /// Triangulated position of this feature, in the global frame
+        Eigen::Vector3d p_FinG;
+    };
+    using FeatureLcPtr = std::shared_ptr<FeatureLC>;
+    using FeatureLcConstPtr = std::shared_ptr<const FeatureLC>;
+#endif    
 
     /**
      * @brief Feature Salient part of an image. Please refer
@@ -123,6 +150,15 @@ namespace msckf_vio {
         // state_id(key)-image_coordinates(value) manner.
         std::map<StateIDType, Eigen::Vector4d, std::less<StateIDType>,
                 Eigen::aligned_allocator<std::pair<const StateIDType, Eigen::Vector4d> > > observations;
+
+#if WITH_LC
+        // pixel coordinates for loop closure
+        std::map<StateIDType, Eigen::Vector4d, std::less<StateIDType>,
+                Eigen::aligned_allocator<std::pair<const StateIDType, Eigen::Vector4d> > > observations_uvs;   
+
+        // double timestamp;
+        std::map<StateIDType, double> timestamp;
+#endif        
 
         // 3d postion of the feature in the world frame.
         Eigen::Vector3d position;

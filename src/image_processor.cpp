@@ -1118,6 +1118,14 @@ void ImageProcessor::publish() {
         feature_msg_ptr->features[i].v0 = curr_cam0_points_undistorted[i].y;
         feature_msg_ptr->features[i].u1 = curr_cam1_points_undistorted[i].x;
         feature_msg_ptr->features[i].v1 = curr_cam1_points_undistorted[i].y;
+
+#if WITH_LC
+        // pixel coordinate for loop closure
+        feature_msg_ptr->features[i].pu0 = curr_cam0_points[i].x;
+        feature_msg_ptr->features[i].pv0 = curr_cam0_points[i].y;
+        feature_msg_ptr->features[i].pu1 = curr_cam1_points[i].x;
+        feature_msg_ptr->features[i].pv1 = curr_cam1_points[i].y;
+#endif        
     }
 
     feature_pub.publish(feature_msg_ptr);  // cam0和cam1 特征点 归一化平面坐标

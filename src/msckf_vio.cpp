@@ -21,7 +21,10 @@
 
 #include <eigen_conversions/eigen_msg.h>
 #include <tf_conversions/tf_eigen.h>
+#include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/CameraInfo.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
 
@@ -181,6 +184,14 @@ bool MsckfVio::createRosIO() {
 
     mocap_odom_sub = nh.subscribe("mocap_odom", 10, &MsckfVio::mocapOdomCallback, this);
     mocap_odom_pub = nh.advertise<nav_msgs::Odometry>("gt_odom", 1);
+
+#if WITH_LC
+    pub_poseimu = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("/ov_msckf/poseimu", 2);
+    pub_keyframe_pose = nh.advertise<nav_msgs::Odometry>("/ov_msckf/keyframe_pose", 1000);
+    pub_keyframe_point = nh.advertise<sensor_msgs::PointCloud>("/ov_msckf/keyframe_feats", 1000);    
+    pub_keyframe_extrinsic = nh.advertise<nav_msgs::Odometry>("/ov_msckf/keyframe_extrinsic", 1000);
+    pub_keyframe_intrinsics = nh.advertise<sensor_msgs::CameraInfo>("/ov_msckf/keyframe_intrinsics", 1000);
+#endif    
 
     return true;
 }
@@ -361,6 +372,14 @@ void MsckfVio::featureCallback(const CameraMeasurementConstPtr& msg) {
     start_time = ros::Time::now();
     pruneCamStateBuffer();
     double prune_cam_states_time = (ros::Time::now() - start_time).toSec();
+
+#if WITH_LC
+    std::vector<FeatureLcPtr> featuresLC;
+    for(const auto &feat : featuresLCDB) featuresLC.emplace_back(feat.second);
+    featuresLCDB.clear();
+    update_keyframe_historical_information(featuresLC);
+    publish_keyframe_information();
+#endif    
 
     // Publish the odometry.
     start_time = ros::Time::now();
@@ -670,9 +689,17 @@ void MsckfVio::addFeatureObservations(const CameraMeasurementConstPtr& msg) {
             // This is a new feature.
             map_server[feature.id] = Feature(feature.id);
             map_server[feature.id].observations[state_id] = Vector4d(feature.u0, feature.v0, feature.u1, feature.v1);
+#if WITH_LC            
+            map_server[feature.id].observations_uvs[state_id] = Vector4d(feature.pu0, feature.pv0, feature.pu1, feature.pv1);
+            map_server[feature.id].timestamp[state_id] = msg->header.stamp.toSec();
+#endif            
         } else {
             // This is an old feature.
             map_server[feature.id].observations[state_id] = Vector4d(feature.u0, feature.v0, feature.u1, feature.v1);
+#if WITH_LC            
+            map_server[feature.id].observations_uvs[state_id] = Vector4d(feature.pu0, feature.pv0, feature.pu1, feature.pv1);
+            map_server[feature.id].timestamp[state_id] = msg->header.stamp.toSec();
+#endif            
             ++tracked_feature_num;
         }
     }
@@ -1025,6 +1052,10 @@ void MsckfVio::removeLostFeatures() {
         FeatureIDType feature_id = processed_feature_ids[n];
         auto &feature = map_server[feature_id];
 
+#if WITH_LC
+        update_feature(feature); // for loop closure
+#endif
+
         vector<StateIDType> cam_state_ids(0);
         for (const auto &measurement : feature.observations)
             cam_state_ids.push_back(measurement.first);
@@ -1120,6 +1151,13 @@ void MsckfVio::pruneCamStateBuffer() {
     vector<StateIDType> rm_cam_state_ids(0);
     findRedundantCamStates(rm_cam_state_ids);
 
+#if WITH_LC
+    StateIDType cam_state_id_margin = std::min(rm_cam_state_ids[0], rm_cam_state_ids[1]);
+    cam_state_margin.first = state_server.cam_states.find(cam_state_id_margin)->first;
+    cam_state_margin.second = state_server.cam_states.find(cam_state_id_margin)->second;
+    is_start_loop = true;
+#endif    
+
     // Find the size of the Jacobian matrix.
     int jacobian_row_size = 0;
     for (auto &item : map_server) {
@@ -1137,6 +1175,10 @@ void MsckfVio::pruneCamStateBuffer() {
             feature.observations.erase(involved_cam_state_ids[0]);
             continue;
         }
+
+#if WITH_LC
+        update_feature(feature); // for loop closure
+#endif        
 
         if (!feature.is_initialized) {
             // Check if the feature can be initialize.
@@ -1293,6 +1335,254 @@ void MsckfVio::onlineReset() {
     return;
 }
 
+#if WITH_LC
+void MsckfVio::update_feature(Feature feature) {
+    const auto &id = feature.id;
+
+    if(featuresLCDB.find(id) != featuresLCDB.end()) {
+        FeatureLcPtr feat = featuresLCDB[id];
+        for(const auto &obs : feature.observations) {
+            const auto &cam_id = obs.first;
+            feat->uvs_norm[cam_id].emplace_back(obs.second);
+            Eigen::Vector4d uv = feature.observations_uvs.find(cam_id)->second;
+            feat->uvs[cam_id].emplace_back(uv);
+            feat->p_FinG = feature.position;
+            feat->timestamps[cam_id].emplace_back(feature.timestamp.find(cam_id)->second);            
+        }
+        return;
+    }
+
+    FeatureLcPtr feat = std::make_shared<FeatureLC>();
+    feat->featid = id;
+    for(const auto &obs : feature.observations) {
+        const auto &cam_id = obs.first;
+        feat->uvs_norm[cam_id].emplace_back(obs.second);
+        Eigen::Vector4d uv = feature.observations_uvs.find(cam_id)->second;
+        feat->uvs[cam_id].emplace_back(uv);
+        feat->p_FinG = feature.position;
+        feat->timestamps[cam_id].emplace_back(feature.timestamp.find(cam_id)->second);
+    }
+    featuresLCDB.insert({id, feat});
+}
+
+void MsckfVio::update_keyframe_historical_information(const std::vector<FeatureLcPtr> &features) {
+    // Loop through all features that have been used in the last update
+    // We want to record their historical measurements and estimates for later use
+    for(const auto &feat : features) {
+
+        // Get position of feature in the global frame of reference
+        Eigen::Vector3d p_FinG = feat->p_FinG;
+
+        // // If it is a slam feature, then get its best guess from the state
+        // if(state->_features_SLAM.find(feat->featid)!=state->_features_SLAM.end()) {
+        //     p_FinG = state->_features_SLAM.at(feat->featid)->get_xyz(false);
+        // }
+
+        // Push back any new measurements if we have them
+        // Ensure that if the feature is already added, then just append the new measurements
+        if(hist_feat_posinG.find(feat->featid)!=hist_feat_posinG.end()) {
+            hist_feat_posinG.at(feat->featid) = p_FinG;
+            for(const auto &cam2uv : feat->uvs) {
+                if(hist_feat_uvs.at(feat->featid).find(cam2uv.first)!=hist_feat_uvs.at(feat->featid).end()) {
+                    hist_feat_uvs.at(feat->featid).at(cam2uv.first).insert(hist_feat_uvs.at(feat->featid).at(cam2uv.first).end(), cam2uv.second.begin(), cam2uv.second.end());
+                    hist_feat_uvs_norm.at(feat->featid).at(cam2uv.first).insert(hist_feat_uvs_norm.at(feat->featid).at(cam2uv.first).end(), feat->uvs_norm.at(cam2uv.first).begin(), feat->uvs_norm.at(cam2uv.first).end());
+                    hist_feat_timestamps.at(feat->featid).at(cam2uv.first).insert(hist_feat_timestamps.at(feat->featid).at(cam2uv.first).end(), feat->timestamps.at(cam2uv.first).begin(), feat->timestamps.at(cam2uv.first).end());
+                } else {
+                    hist_feat_uvs.at(feat->featid).insert(cam2uv);
+                    hist_feat_uvs_norm.at(feat->featid).insert({cam2uv.first,feat->uvs_norm.at(cam2uv.first)});
+                    hist_feat_timestamps.at(feat->featid).insert({cam2uv.first,feat->timestamps.at(cam2uv.first)});
+                }
+            }
+        } else {
+            hist_feat_posinG.insert({feat->featid,p_FinG});
+            hist_feat_uvs.insert({feat->featid,feat->uvs});
+            hist_feat_uvs_norm.insert({feat->featid,feat->uvs_norm});
+            hist_feat_timestamps.insert({feat->featid,feat->timestamps});
+        }
+    } 
+
+    std::vector<size_t> ids_to_remove;
+    for(const auto &id2feat : hist_feat_timestamps) {
+        bool all_older = true;
+        for(const auto &cam2time : id2feat.second) {
+            for(const auto &time : cam2time.second) {
+                if(time >= hist_last_marginalized_time) {
+                    all_older = false;
+                    break;
+                }
+            }
+            if(!all_older) break;
+        }
+        if(all_older) {
+            ids_to_remove.push_back(id2feat.first);
+        }
+    }
+
+    // Remove those features!
+    for(const auto &id : ids_to_remove) {
+        hist_feat_posinG.erase(id);
+        hist_feat_uvs.erase(id);
+        hist_feat_uvs_norm.erase(id);
+        hist_feat_timestamps.erase(id);
+    }
+
+    // Remove any historical states older then the marg time
+    auto it0 = hist_stateinG.begin();
+    while(it0 != hist_stateinG.end()) {
+        if(it0->first < hist_last_marginalized_time) it0 = hist_stateinG.erase(it0);
+        else it0++;
+    }
+
+    // if (state_server.cam_states.size() >= max_cam_state_size)
+
+    if ( is_start_loop ) {
+        const auto &cam_state = cam_state_margin.second; // state_server.cam_states.begin()->second;
+        hist_last_marginalized_time = cam_state.time;
+        assert(hist_last_marginalized_time != INFINITY);
+        Eigen::Matrix<double,7,1> state_inG = Eigen::Matrix<double,7,1>::Zero();
+        Eigen::Quaterniond q_wc(quaternionToRotation(cam_state.orientation).transpose());
+        state_inG(0) = q_wc.x();
+        state_inG(1) = q_wc.y();
+        state_inG(2) = q_wc.z();
+        state_inG(3) = q_wc.w();
+        state_inG.tail(3) = cam_state.position;
+        hist_stateinG.insert({hist_last_marginalized_time, state_inG});
+    } 
+}
+
+void MsckfVio::publish_keyframe_information() {
+    // if(pub_keyframe_pose.getNumSubscribers()==0 && pub_keyframe_point.getNumSubscribers()==0) return;
+
+    Eigen::Matrix<double,7,1> stateinG;
+    if(hist_last_marginalized_time != -1) {
+        stateinG = hist_stateinG.at(hist_last_marginalized_time);
+    } else {
+        stateinG.setZero();
+        return;
+    }
+
+    printf("[cggos %s] 002 \n", __FUNCTION__);
+
+    std_msgs::Header header;
+    header.stamp = ros::Time(hist_last_marginalized_time);
+
+    Isometry3d T_ci = utils::getTransformEigen(nh, "cam0/T_cam_imu");
+    Eigen::Vector4d q_ItoC;
+    Eigen::Quaterniond q(T_ci.linear().transpose());
+    q_ItoC[0] = q.x();
+    q_ItoC[1] = q.y();
+    q_ItoC[2] = q.z();
+    q_ItoC[3] = q.w();
+    Eigen::Vector3d p_CinI = - T_ci.linear().transpose() * T_ci.translation();
+    nav_msgs::Odometry odometry_calib;
+    odometry_calib.header = header;
+    odometry_calib.header.frame_id = "imu";
+    odometry_calib.pose.pose.position.x = p_CinI(0);
+    odometry_calib.pose.pose.position.y = p_CinI(1);
+    odometry_calib.pose.pose.position.z = p_CinI(2);
+    odometry_calib.pose.pose.orientation.x = q_ItoC(0);
+    odometry_calib.pose.pose.orientation.y = q_ItoC(1);
+    odometry_calib.pose.pose.orientation.z = q_ItoC(2);
+    odometry_calib.pose.pose.orientation.w = q_ItoC(3);
+    pub_keyframe_extrinsic.publish(odometry_calib);    
+
+    sensor_msgs::CameraInfo cameraparams;
+    cameraparams.header = header;
+    cameraparams.header.frame_id = "imu";
+    cameraparams.distortion_model = "plumb_bob";
+    vector<double> vD(4);
+    nh.getParam("cam0/distortion_coeffs", vD);
+    cameraparams.D = {vD[0], vD[1], vD[2], vD[3]};
+    vector<double> vK(4);
+    nh.getParam("cam0/intrinsics", vK);
+    double fx = vK[0];
+    double fy = vK[1];
+    double cx = vK[2];
+    double cy = vK[3];    
+    cameraparams.K = {fx, 0., cx, 0., fy, cy, 0., 0., 1.};
+    pub_keyframe_intrinsics.publish(cameraparams);
+
+    //======================================================
+    // PUBLISH HISTORICAL POSE ESTIMATE
+    nav_msgs::Odometry odometry_pose;
+    odometry_pose.header = header;
+    odometry_pose.header.frame_id = "global";
+    Eigen::Quaterniond q_wi;
+    Eigen::Vector3d t_wi;
+    {
+        Eigen::Quaterniond q_wc;
+        Eigen::Vector3d t_wc;
+        q_wc.x() = stateinG(0);
+        q_wc.y() = stateinG(1);
+        q_wc.z() = stateinG(2);
+        q_wc.w() = stateinG(3);
+        t_wc = stateinG.tail(3);
+
+        Eigen::Matrix3d r_ci = T_ci.linear();
+        Eigen::Vector3d t_ci = T_ci.translation();
+
+        q_wi = q_wc * Eigen::Quaterniond(r_ci);
+        t_wi = q_wc.toRotationMatrix() * t_ci + t_wc;
+    }
+    odometry_pose.pose.pose.position.x = t_wi(0);
+    odometry_pose.pose.pose.position.y = t_wi(1);
+    odometry_pose.pose.pose.position.z = t_wi(2);
+    odometry_pose.pose.pose.orientation.x = q_wi.x();
+    odometry_pose.pose.pose.orientation.y = q_wi.y();
+    odometry_pose.pose.pose.orientation.z = q_wi.z();
+    odometry_pose.pose.pose.orientation.w = q_wi.w();
+    pub_keyframe_pose.publish(odometry_pose);   
+
+    printf("[cggos] hist_feat_timestamps size: %d\n", hist_feat_timestamps.size());
+
+    // Construct the message
+    sensor_msgs::PointCloud point_cloud;
+    point_cloud.header = header;
+    point_cloud.header.frame_id = "global";
+    for(const auto &feattimes : hist_feat_timestamps) {
+        StateIDType state_id = cam_state_margin.first;
+
+        // Skip if this feature has no extraction in the "zero" camera
+        if(feattimes.second.find(state_id)==feattimes.second.end()) // 0
+            continue;
+
+        // printf("[cggos loop] %s, %f, %f, %f \n", __FUNCTION__,
+        //     *feattimes.second.at(state_id).begin(),
+        //     *(feattimes.second.at(state_id).end()-1),
+        //     hist_last_marginalized_time);            
+
+        // Skip if this feature does not have measurement at this time
+        auto iter = std::find(feattimes.second.at(state_id).begin(), feattimes.second.at(state_id).end(), hist_last_marginalized_time);
+        if(iter==feattimes.second.at(state_id).end())
+            continue;
+
+        // Get this feature information
+        size_t featid = feattimes.first;
+        size_t index = (size_t)std::distance(feattimes.second.at(state_id).begin(), iter);
+        Eigen::Vector4d uv = hist_feat_uvs.at(featid).at(state_id).at(index);
+        Eigen::Vector4d uv_n = hist_feat_uvs_norm.at(featid).at(state_id).at(index);
+        Eigen::Vector3d pFinG = hist_feat_posinG.at(featid);
+
+        // Push back 3d point
+        geometry_msgs::Point32 p;
+        p.x = pFinG(0);
+        p.y = pFinG(1);
+        p.z = pFinG(2);
+        point_cloud.points.push_back(p);
+
+        // Push back the norm, raw, and feature id
+        sensor_msgs::ChannelFloat32 p_2d;
+        p_2d.values.push_back(uv_n(0));
+        p_2d.values.push_back(uv_n(1));
+        p_2d.values.push_back(uv(0));
+        p_2d.values.push_back(uv(1));
+        p_2d.values.push_back(featid);
+        point_cloud.channels.push_back(p_2d);
+    }
+    pub_keyframe_point.publish(point_cloud);     
+}
+#endif
+
 void MsckfVio::publish(const ros::Time& time) {
     // Convert the IMU frame to the body frame.
     const IMUState &imu_state = state_server.imu_state;
@@ -1354,6 +1644,15 @@ void MsckfVio::publish(const ros::Time& time) {
             odom_msg.twist.covariance[i * 6 + j] = P_body_vel(i, j);
 
     odom_pub.publish(odom_msg);
+
+#if WITH_LC
+    // for loop closure
+    geometry_msgs::PoseWithCovarianceStamped poseIinM;
+    poseIinM.header.stamp = time;
+    poseIinM.header.frame_id = fixed_frame_id;
+    poseIinM.pose = odom_msg.pose;
+    pub_poseimu.publish(poseIinM);
+#endif    
 
     // Publish the path
     geometry_msgs::PoseStamped pose_stamped;
