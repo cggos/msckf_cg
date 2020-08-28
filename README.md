@@ -46,6 +46,22 @@ catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
   ```
   ![](images/msckf_vio_mynteye_s1030.png)
 
+## MSCKF + Loop Closure
+
+ref: OpenVINS + [ov_secondary](https://github.com/rpng/ov_secondary)
+
+* download and build **ov_secondary**, run
+  ```sh
+  roslaunch loop_fusion posegraph.launch
+  ```
+
+* run MSCKF_VIO with EoRoC MH_01_easy
+  ```sh
+  roslaunch msckf_vio msckf_vio_euroc.launch rviz:=true
+  rosbag play -s 40 euroc/MH_01_easy.bag
+  ```
+  ![](images/msckf_vio_loop_rosgraph.png)
+  ![](images/msckf_vio_loop.png)
 
 ## Calibration
 
