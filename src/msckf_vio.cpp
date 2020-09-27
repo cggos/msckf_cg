@@ -129,11 +129,11 @@ bool MsckfVio::loadParameters() {
         state_server.state_cov(i, i) = extrinsic_translation_cov;
 
     // Transformation offsets between the frames involved.
-    Isometry3d T_imu_cam0 = utils::getTransformEigen(nh, "cam0/T_cam_imu");
-    Isometry3d T_cam0_imu = T_imu_cam0.inverse();
+    Isometry3d T_imu_cam0 = utils::getTransformEigen(nh, "cam0/T_cam_imu"); // Tci
+    Isometry3d T_cam0_imu = T_imu_cam0.inverse(); // Tic
 
-    state_server.imu_state.R_imu_cam0 = T_cam0_imu.linear().transpose();
-    state_server.imu_state.t_cam0_imu = T_cam0_imu.translation();
+    state_server.imu_state.R_imu_cam0 = T_cam0_imu.linear().transpose(); // Rci
+    state_server.imu_state.t_cam0_imu = T_cam0_imu.translation(); // tic
     CAMState::T_cam0_cam1 = utils::getTransformEigen(nh, "cam1/T_cn_cnm1");
     IMUState::T_imu_body = utils::getTransformEigen(nh, "T_imu_body").inverse();
 
@@ -181,6 +181,7 @@ bool MsckfVio::loadParameters() {
 bool MsckfVio::createRosIO() {
     path_pub = nh.advertise<nav_msgs::Path>("path", 10);
     odom_pub = nh.advertise<nav_msgs::Odometry>("odom", 10);
+    cam_odom_pub = nh.advertise<nav_msgs::Odometry>("odom_cam", 10);
     feature_pub = nh.advertise<sensor_msgs::PointCloud2>("feature_point_cloud", 10);
 
     reset_srv = nh.advertiseService("reset", &MsckfVio::resetCallback, this);
@@ -629,14 +630,14 @@ void MsckfVio::predictNewState(const double& dt, const Vector3d& gyro, const Vec
 }
 
 void MsckfVio::stateAugmentation(const double& time) {
-    const Matrix3d &R_i_c = state_server.imu_state.R_imu_cam0;
-    const Vector3d &t_c_i = state_server.imu_state.t_cam0_imu;
+    const Matrix3d &R_i_c = state_server.imu_state.R_imu_cam0; // Rci
+    const Vector3d &t_c_i = state_server.imu_state.t_cam0_imu; // tic
 
     /// 相机状态向量扩增
     // Add a new camera state to the state server.
-    Matrix3d R_w_i = quaternionToRotation(state_server.imu_state.orientation);
-    Matrix3d R_w_c = R_i_c * R_w_i;
-    Vector3d t_c_w = state_server.imu_state.position + R_w_i.transpose() * t_c_i;
+    Matrix3d R_w_i = quaternionToRotation(state_server.imu_state.orientation); // Riw
+    Matrix3d R_w_c = R_i_c * R_w_i; // Rcw
+    Vector3d t_c_w = state_server.imu_state.position + R_w_i.transpose() * t_c_i; // twc
 
     state_server.cam_states[state_server.imu_state.id] = CAMState(state_server.imu_state.id);
     CAMState &cam_state = state_server.cam_states[state_server.imu_state.id];
@@ -1662,7 +1663,7 @@ void MsckfVio::publish(const ros::Time& time) {
     // Convert the IMU frame to the body frame.
     const IMUState &imu_state = state_server.imu_state;
 
-    Eigen::Isometry3d T_i_w = Eigen::Isometry3d::Identity();
+    Eigen::Isometry3d T_i_w = Eigen::Isometry3d::Identity(); // Twi
     T_i_w.linear() = quaternionToRotation(imu_state.orientation).transpose();
     T_i_w.translation() = imu_state.position;
 
@@ -1728,6 +1729,13 @@ void MsckfVio::publish(const ros::Time& time) {
     poseIinM.pose = odom_msg.pose;
     pub_poseimu.publish(poseIinM);
 #endif    
+
+    // publish cam odom
+    nav_msgs::Odometry odom_cam_msg;
+    odom_cam_msg.header = odom_msg.header;
+    Eigen::Isometry3d Twc = getCamPose();
+    tf::poseEigenToMsg(Twc, odom_cam_msg.pose.pose);
+    cam_odom_pub.publish(odom_cam_msg);    
 
     // Publish the path
     geometry_msgs::PoseStamped pose_stamped;

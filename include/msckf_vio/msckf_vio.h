@@ -229,7 +229,7 @@ namespace msckf_vio {
         // Subscribers and publishers
         ros::Subscriber imu_sub;
         ros::Subscriber feature_sub;
-        ros::Publisher odom_pub;
+        ros::Publisher odom_pub, cam_odom_pub;
         ros::Publisher path_pub;
         ros::Publisher feature_pub;
         tf::TransformBroadcaster tf_pub;
@@ -258,6 +258,25 @@ namespace msckf_vio {
         Eigen::Isometry3d mocap_initial_frame;
 
         std::ofstream pose_outfile_;
+
+        inline Eigen::Isometry3d getCamPose() {
+            const IMUState &imu_state = state_server.imu_state;
+
+            const Eigen::Matrix3d& Rcb = imu_state.R_imu_cam0; // Rcb
+            const Eigen::Vector3d& tbc = imu_state.t_cam0_imu; // tbc
+
+            // Rwb
+            Eigen::Vector4d qwb = imu_state.orientation;
+            Eigen::Matrix3d Rwb = Eigen::Quaterniond(qwb(3), qwb(0), qwb(1), qwb(2)).toRotationMatrix();
+            // twb
+            Eigen::Vector3d twb = imu_state.position;
+
+            Eigen::Isometry3d Twc = Eigen::Isometry3d::Identity();
+            Twc.linear() = Rwb * Rcb.transpose();
+            Twc.translation() = Rwb * tbc + twb;
+
+            return Twc;
+        }        
 
 #if WITH_LC
     private:
