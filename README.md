@@ -16,7 +16,7 @@ mkdir -p ws_msckf/src
 cd ws_msckf/src
 git clone xxx
 cd ../
-catkin_make --pkg msckf_vio --cmake-args -DCMAKE_BUILD_TYPE=Release
+catkin_make --pkg msckf_vio [--cmake-args -DCMAKE_BUILD_TYPE=Release]
 ```
 
 ## Run
